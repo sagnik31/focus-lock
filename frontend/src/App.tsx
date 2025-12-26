@@ -2,13 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps } from "../wailsjs/go/main/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { AppSelector } from "./components/AppSelector";
+import { InlineKeypad } from "./components/InlineKeypad";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
     const [newApp, setNewApp] = useState("");
-    const [hours, setHours] = useState(0);
-    const [minutes, setMinutes] = useState(0);
-    const [seconds, setSeconds] = useState(0);
+    // Time state managed by InlineKeypad internal buffer
+    // Seconds removed per new design requirement
     const [error, setError] = useState("");
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
@@ -68,9 +68,9 @@ function App() {
         }
     };
 
-    const handleStart = async () => {
+    const handleStart = async (h: number, m: number) => {
         try {
-            const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+            const totalSeconds = (h * 3600) + (m * 60);
             if (totalSeconds <= 0) {
                 setError("Duration must be greater than 0");
                 return;
@@ -95,10 +95,10 @@ function App() {
 
     return (
         <div id="app" className="min-h-screen bg-slate-900 text-slate-100 p-8 font-sans">
-            <div className="max-w-2xl mx-auto space-y-8">
+            <div className="w-full space-y-8">
                 <header className="flex justify-between items-center border-b border-slate-700 pb-4">
                     <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                        Focus Lock
+                        Focus Lock (v1.1)
                     </h1>
                     <div className={`px-3 py-1 rounded-full text-sm font-bold ${isLocked ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
                         {isLocked ? "LOCKED" : "READY"}
@@ -125,46 +125,8 @@ function App() {
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            <div className="flex items-center justify-center gap-4">
-                                <div className="flex flex-col items-center">
-                                    <label className="text-slate-400 text-sm mb-1">Hours</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={hours}
-                                        onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <span className="text-2xl text-slate-600 mt-6">:</span>
-                                <div className="flex flex-col items-center">
-                                    <label className="text-slate-400 text-sm mb-1">Minutes</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={minutes}
-                                        onChange={(e) => setMinutes(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <span className="text-2xl text-slate-600 mt-6">:</span>
-                                <div className="flex flex-col items-center">
-                                    <label className="text-slate-400 text-sm mb-1">Seconds</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={seconds}
-                                        onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
-                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                            </div>
-                            <button
-                                onClick={handleStart}
-                                className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-lg font-bold text-lg shadow-lg transform active:scale-95 transition-all"
-                            >
-                                Start Focus
-                            </button>
+                            <p className="text-slate-400 text-sm mb-4">Set Duration</p>
+                            <InlineKeypad onStart={handleStart} />
                         </div>
                     )}
                 </section>
@@ -199,7 +161,7 @@ function App() {
                         </button>
                     </div>
 
-                    <div className="grid gap-2">
+                    <div className="grid grid-cols-3 gap-4">
                         {config.blocked_apps.length === 0 && (
                             <div className="text-center py-8 text-slate-500 italic border border-dashed border-slate-700 rounded-lg">
                                 No apps blocked. Add one above.
@@ -222,18 +184,7 @@ function App() {
                                             <span className="font-semibold text-white">
                                                 {appInfo?.name || exeName}
                                             </span>
-                                            {/* Executable Name (subtext) - HIDDEN per user request */}
-                                            {/* <span className="font-mono text-xs text-slate-500">
-                                                {exeName}
-                                            </span> */}
                                         </div>
-
-                                        {/* Kill Count - HIDDEN per user request */}
-                                        {/* {config.stats.kill_counts && config.stats.kill_counts[exeName] > 0 && (
-                                            <span className="ml-2 text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded">
-                                                {config.stats.kill_counts[exeName]} kills
-                                            </span>
-                                        )} */}
                                     </div>
                                     <button
                                         onClick={() => handleRemove(exeName)}

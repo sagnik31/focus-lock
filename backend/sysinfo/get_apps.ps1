@@ -145,4 +145,4 @@ Get-Process | Where-Object { $_.MainWindowTitle -and $_.Path } | ForEach-Object 
     } catch {}
 }
 
-$apps | ConvertTo-Json -Depth 2
+$apps | Sort-Object -Property name | ConvertTo-Json -Depth 2

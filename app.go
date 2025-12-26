@@ -9,6 +9,7 @@ import (
 	"focus-lock/backend/sysinfo"
 	"os"
 	"os/exec"
+	"sort"
 	"syscall"
 	"time"
 )
@@ -37,6 +38,7 @@ func (a *App) startup(ctx context.Context) {
 
 func (a *App) GetConfig() storage.Config {
 	a.Store.Load()
+	sort.Strings(a.Store.Data.BlockedApps)
 	return a.Store.Data
 }
 
@@ -53,6 +55,7 @@ func (a *App) AddApp(appName string) error {
 		}
 	}
 	a.Store.Data.BlockedApps = append(a.Store.Data.BlockedApps, appName)
+	sort.Strings(a.Store.Data.BlockedApps)
 	return a.Store.Save()
 }
 
@@ -71,6 +74,7 @@ func (a *App) RemoveApp(appName string) error {
 // SetBlockedApps updates the entire list of blocked apps at once.
 func (a *App) SetBlockedApps(apps []string) error {
 	a.Store.Load()
+	sort.Strings(apps)
 	a.Store.Data.BlockedApps = apps
 	return a.Store.Save()
 }

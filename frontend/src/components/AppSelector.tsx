@@ -61,7 +61,7 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-slate-800 rounded-xl shadow-2xl border border-slate-700 w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="bg-slate-800 rounded-xl shadow-2xl border border-slate-700 w-full max-w-[90vw] h-[85vh] flex flex-col">
                 <div className="p-4 border-b border-slate-700 flex justify-between items-center">
                     <h2 className="text-xl font-bold text-white">Select Apps to Block</h2>
                     <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
@@ -84,33 +84,34 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
                     </button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                <div className="flex-1 overflow-y-auto p-4">
                     {loading ? (
                         <div className="text-center py-8 text-slate-400">Loading installed applications...</div>
                     ) : (
-                        filteredApps.map((app) => (
-                            <div
-                                key={app.exe}
-                                onClick={() => toggleApp(app.exe)}
-                                className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${selected.has(app.exe) ? 'bg-blue-600/20 border border-blue-500/50' : 'hover:bg-slate-700 border border-transparent'}`}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={selected.has(app.exe)}
-                                    readOnly
-                                    className="w-5 h-5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0"
-                                />
-                                {app.icon ? (
-                                    <img src={app.icon} alt={app.name} className="w-8 h-8 object-contain" />
-                                ) : (
-                                    <div className="w-8 h-8 bg-slate-600 rounded flex items-center justify-center text-xs text-white">?</div>
-                                )}
-                                <div>
-                                    <div className="text-white font-medium">{app.name}</div>
-                                    {/* <div className="text-slate-400 text-xs font-mono">{app.exe}</div> */}
+                        <div className="grid grid-cols-3 gap-4">
+                            {filteredApps.map((app) => (
+                                <div
+                                    key={app.exe}
+                                    onClick={() => toggleApp(app.exe)}
+                                    className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${selected.has(app.exe) ? 'bg-blue-600/20 border-blue-500/50' : 'bg-slate-700/50 hover:bg-slate-700 border-transparent'}`}
+                                >
+                                    <input
+                                        type="checkbox"
+                                        checked={selected.has(app.exe)}
+                                        readOnly
+                                        className="w-5 h-5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0 shrink-0"
+                                    />
+                                    {app.icon ? (
+                                        <img src={app.icon} alt={app.name} className="w-8 h-8 object-contain shrink-0" />
+                                    ) : (
+                                        <div className="w-8 h-8 bg-slate-600 rounded flex items-center justify-center text-xs text-white shrink-0">?</div>
+                                    )}
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-white font-medium truncate" title={app.name}>{app.name}</div>
+                                    </div>
                                 </div>
-                            </div>
-                        ))
+                            ))}
+                        </div>
                     )}
                 </div>
 
