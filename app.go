@@ -75,9 +75,9 @@ func (a *App) SetBlockedApps(apps []string) error {
 	return a.Store.Save()
 }
 
-func (a *App) StartFocus(minutes int) error {
+func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
-	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(minutes) * time.Minute)
+	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(seconds) * time.Second)
 	if err := a.Store.Save(); err != nil {
 		return err
 	}

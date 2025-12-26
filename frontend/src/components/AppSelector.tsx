@@ -16,21 +16,24 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
     const [selected, setSelected] = useState<Set<string>>(new Set(currentlyBlocked));
 
     useEffect(() => {
-        if (isOpen && apps.length === 0) {
-            setLoading(true);
-            GetInstalledApps()
-                .then((result) => {
-                    setApps(result);
-                    setLoading(false);
-                })
-                .catch((err) => {
-                    console.error("Failed to load apps:", err);
-                    setLoading(false);
-                });
+        if (isOpen) {
+            // Only load apps if empty
+            if (apps.length === 0) {
+                setLoading(true);
+                GetInstalledApps()
+                    .then((result) => {
+                        setApps(result);
+                        setLoading(false);
+                    })
+                    .catch((err) => {
+                        console.error("Failed to load apps:", err);
+                        setLoading(false);
+                    });
+            }
+            // Initialize selection state ONLY when opening
+            setSelected(new Set(currentlyBlocked));
         }
-        // Update selection when opening (if props change)
-        setSelected(new Set(currentlyBlocked));
-    }, [isOpen, currentlyBlocked]);
+    }, [isOpen]); // Removed currentlyBlocked from dependency to prevent reset on poll
 
     const toggleApp = (exeName: string) => {
         const newSelected = new Set(selected);
@@ -91,9 +94,12 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
                                 onClick={() => toggleApp(app.exe)}
                                 className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${selected.has(app.exe) ? 'bg-blue-600/20 border border-blue-500/50' : 'hover:bg-slate-700 border border-transparent'}`}
                             >
-                                <div className={`w-5 h-5 rounded border flex items-center justify-center ${selected.has(app.exe) ? 'bg-blue-500 border-blue-500' : 'border-slate-500'}`}>
-                                    {selected.has(app.exe) && <span className="text-white text-xs">✓</span>}
-                                </div>
+                                <input
+                                    type="checkbox"
+                                    checked={selected.has(app.exe)}
+                                    readOnly
+                                    className="w-5 h-5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0"
+                                />
                                 {app.icon ? (
                                     <img src={app.icon} alt={app.name} className="w-8 h-8 object-contain" />
                                 ) : (
@@ -101,7 +107,7 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
                                 )}
                                 <div>
                                     <div className="text-white font-medium">{app.name}</div>
-                                    <div className="text-slate-400 text-xs font-mono">{app.exe}</div>
+                                    {/* <div className="text-slate-400 text-xs font-mono">{app.exe}</div> */}
                                 </div>
                             </div>
                         ))

@@ -1,11 +1,11 @@
 package sysinfo
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 )
 
@@ -15,20 +15,24 @@ type AppInfo struct {
 	Exe  string `json:"exe"`
 }
 
+//go:embed get_apps.ps1
+var getAppsScript []byte
+
 // GetInstalledApps executes a PowerShell script to retrieve installed applications
 func GetInstalledApps() ([]AppInfo, error) {
-	// Locate the script - assuming it's in the current working directory or relative to executable
-	// In development (run from root), it's scripts/get_apps.ps1
-	// In production, we might need to look relative to the binary
-
-	scriptPath := "scripts/get_apps.ps1"
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		// Try looking relative to executable if not found in CWD
-		exePath, _ := os.Executable()
-		scriptPath = filepath.Join(filepath.Dir(exePath), "scripts", "get_apps.ps1")
+	// Write embedded script to a temp file
+	tmpFile, err := os.CreateTemp("", "get_apps_*.ps1")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
 	}
+	defer os.Remove(tmpFile.Name()) // Clean up
 
-	cmd := exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", scriptPath)
+	if _, err := tmpFile.Write(getAppsScript); err != nil {
+		return nil, fmt.Errorf("failed to write script to temp file: %w", err)
+	}
+	tmpFile.Close()
+
+	cmd := exec.Command("powershell", "-ExecutionPolicy", "Bypass", "-File", tmpFile.Name())
 
 	// Hide the window
 	cmd.SysProcAttr = &syscall.SysProcAttr{

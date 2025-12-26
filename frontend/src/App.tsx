@@ -1,14 +1,17 @@
-import { useState, useEffect } from 'react';
-import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps } from "../wailsjs/go/main/App";
-import { storage } from "../wailsjs/go/models";
+import { useState, useEffect, useMemo } from 'react';
+import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps } from "../wailsjs/go/main/App";
+import { storage, sysinfo } from "../wailsjs/go/models";
 import { AppSelector } from "./components/AppSelector";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
     const [newApp, setNewApp] = useState("");
-    const [duration, setDuration] = useState(60);
+    const [hours, setHours] = useState(0);
+    const [minutes, setMinutes] = useState(0);
+    const [seconds, setSeconds] = useState(0);
     const [error, setError] = useState("");
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
 
     const refresh = async () => {
         try {
@@ -22,8 +25,20 @@ function App() {
     useEffect(() => {
         refresh();
         const interval = setInterval(refresh, 2000); // Poll for updates
+
+        // Fetch installed apps initially to populate names/icons
+        GetInstalledApps().then(setInstalledApps).catch(console.error);
+
         return () => clearInterval(interval);
     }, []);
+
+    const appMap = useMemo(() => {
+        const map = new Map<string, sysinfo.AppInfo>();
+        installedApps.forEach(app => {
+            map.set(app.exe.toLowerCase(), app);
+        });
+        return map;
+    }, [installedApps]);
 
     const handleAdd = async () => {
         if (!newApp) return;
@@ -55,7 +70,12 @@ function App() {
 
     const handleStart = async () => {
         try {
-            await StartFocus(Number(duration));
+            const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+            if (totalSeconds <= 0) {
+                setError("Duration must be greater than 0");
+                return;
+            }
+            await StartFocus(totalSeconds);
             refresh();
         } catch (err: any) {
             setError("Failed to start: " + err);
@@ -69,7 +89,8 @@ function App() {
 
     // Calculate time remaining
     const timeLeft = isLocked ? Math.max(0, Math.floor((new Date(config.lock_end_time).getTime() - new Date().getTime()) / 1000)) : 0;
-    const minutesLeft = Math.floor(timeLeft / 60);
+    const hoursLeft = Math.floor(timeLeft / 3600);
+    const minutesLeft = Math.floor((timeLeft % 3600) / 60);
     const secondsLeft = timeLeft % 60;
 
     return (
@@ -95,6 +116,9 @@ function App() {
                     {isLocked ? (
                         <div className="space-y-4">
                             <div className="text-6xl font-mono font-bold tracking-widest text-blue-400">
+                                {hoursLeft > 0 ? (
+                                    <span>{hoursLeft.toString().padStart(2, '0')}:</span>
+                                ) : null}
                                 {minutesLeft.toString().padStart(2, '0')}:{secondsLeft.toString().padStart(2, '0')}
                             </div>
                             <p className="text-slate-400 text-sm">Focus Mode Active</p>
@@ -102,13 +126,38 @@ function App() {
                     ) : (
                         <div className="space-y-4">
                             <div className="flex items-center justify-center gap-4">
-                                <label className="text-slate-400">Duration (min):</label>
-                                <input
-                                    type="number"
-                                    value={duration}
-                                    onChange={(e) => setDuration(parseInt(e.target.value))}
-                                    className="w-24 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                />
+                                <div className="flex flex-col items-center">
+                                    <label className="text-slate-400 text-sm mb-1">Hours</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={hours}
+                                        onChange={(e) => setHours(Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <span className="text-2xl text-slate-600 mt-6">:</span>
+                                <div className="flex flex-col items-center">
+                                    <label className="text-slate-400 text-sm mb-1">Minutes</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={minutes}
+                                        onChange={(e) => setMinutes(Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <span className="text-2xl text-slate-600 mt-6">:</span>
+                                <div className="flex flex-col items-center">
+                                    <label className="text-slate-400 text-sm mb-1">Seconds</label>
+                                    <input
+                                        type="number"
+                                        min="0"
+                                        value={seconds}
+                                        onChange={(e) => setSeconds(Math.max(0, parseInt(e.target.value) || 0))}
+                                        className="w-16 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
                             </div>
                             <button
                                 onClick={handleStart}
@@ -156,25 +205,46 @@ function App() {
                                 No apps blocked. Add one above.
                             </div>
                         )}
-                        {config.blocked_apps.map((app) => (
-                            <div key={app} className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700">
-                                <div className="flex items-center gap-3">
-                                    <span className="font-mono text-sm text-yellow-400">{app}</span>
-                                    {config.stats.kill_counts && config.stats.kill_counts[app] > 0 && (
-                                        <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded">
-                                            {config.stats.kill_counts[app]} kills
-                                        </span>
-                                    )}
+                        {config.blocked_apps.map((exeName) => {
+                            const appInfo = appMap.get(exeName.toLowerCase());
+                            return (
+                                <div key={exeName} className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700">
+                                    <div className="flex items-center gap-3">
+                                        {/* Icon */}
+                                        {appInfo?.icon ? (
+                                            <img src={appInfo.icon} alt={appInfo.name} className="w-8 h-8 object-contain" />
+                                        ) : (
+                                            <div className="w-8 h-8 bg-slate-600 rounded flex items-center justify-center text-xs text-white">?</div>
+                                        )}
+
+                                        <div className="flex flex-col">
+                                            {/* Friendly Name */}
+                                            <span className="font-semibold text-white">
+                                                {appInfo?.name || exeName}
+                                            </span>
+                                            {/* Executable Name (subtext) - HIDDEN per user request */}
+                                            {/* <span className="font-mono text-xs text-slate-500">
+                                                {exeName}
+                                            </span> */}
+                                        </div>
+
+                                        {/* Kill Count - HIDDEN per user request */}
+                                        {/* {config.stats.kill_counts && config.stats.kill_counts[exeName] > 0 && (
+                                            <span className="ml-2 text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded">
+                                                {config.stats.kill_counts[exeName]} kills
+                                            </span>
+                                        )} */}
+                                    </div>
+                                    <button
+                                        onClick={() => handleRemove(exeName)}
+                                        disabled={isLocked}
+                                        className="text-slate-500 hover:text-red-400 disabled:opacity-30 p-1"
+                                    >
+                                        Remove
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => handleRemove(app)}
-                                    disabled={isLocked}
-                                    className="text-slate-500 hover:text-red-400 disabled:opacity-30 p-1"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </section>
             </div>
