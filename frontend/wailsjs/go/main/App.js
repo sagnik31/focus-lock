@@ -10,8 +10,16 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetInstalledApps() {
+  return window['go']['main']['App']['GetInstalledApps']();
+}
+
 export function RemoveApp(arg1) {
   return window['go']['main']['App']['RemoveApp'](arg1);
+}
+
+export function SetBlockedApps(arg1) {
+  return window['go']['main']['App']['SetBlockedApps'](arg1);
 }
 
 export function StartFocus(arg1) {

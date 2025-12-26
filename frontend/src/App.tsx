@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig } from "../wailsjs/go/main/App";
+import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps } from "../wailsjs/go/main/App";
 import { storage } from "../wailsjs/go/models";
+import { AppSelector } from "./components/AppSelector";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
     const [newApp, setNewApp] = useState("");
     const [duration, setDuration] = useState(60);
     const [error, setError] = useState("");
+    const [isSelectorOpen, setIsSelectorOpen] = useState(false);
 
     const refresh = async () => {
         try {
@@ -39,6 +41,18 @@ function App() {
         refresh();
     };
 
+    const handleSaveApps = async (apps: string[]) => {
+        console.log("Saving apps:", apps);
+        try {
+            await SetBlockedApps(apps);
+            console.log("SetBlockedApps completed");
+            refresh();
+        } catch (err: any) {
+            console.error("SetBlockedApps failed:", err);
+            setError(err.toString());
+        }
+    };
+
     const handleStart = async () => {
         try {
             await StartFocus(Number(duration));
@@ -48,15 +62,11 @@ function App() {
         }
     };
 
-    const handleStop = async () => {
-        await StopFocus();
-        refresh();
-    };
 
     if (!config) return <div className="p-8 text-white">Loading...</div>;
 
     const isLocked = new Date(config.lock_end_time) > new Date();
-    
+
     // Calculate time remaining
     const timeLeft = isLocked ? Math.max(0, Math.floor((new Date(config.lock_end_time).getTime() - new Date().getTime()) / 1000)) : 0;
     const minutesLeft = Math.floor(timeLeft / 60);
@@ -88,25 +98,19 @@ function App() {
                                 {minutesLeft.toString().padStart(2, '0')}:{secondsLeft.toString().padStart(2, '0')}
                             </div>
                             <p className="text-slate-400 text-sm">Focus Mode Active</p>
-                            <button 
-                                onClick={handleStop}
-                                className="mt-4 text-xs text-red-500 hover:text-red-400 underline opacity-50 hover:opacity-100 transition-opacity"
-                            >
-                                Emergency Stop
-                            </button>
                         </div>
                     ) : (
                         <div className="space-y-4">
                             <div className="flex items-center justify-center gap-4">
                                 <label className="text-slate-400">Duration (min):</label>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     value={duration}
                                     onChange={(e) => setDuration(parseInt(e.target.value))}
                                     className="w-24 bg-slate-900 border border-slate-600 rounded px-3 py-2 text-center text-lg focus:ring-2 focus:ring-blue-500 outline-none"
                                 />
                             </div>
-                            <button 
+                            <button
                                 onClick={handleStart}
                                 className="w-full py-4 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 rounded-lg font-bold text-lg shadow-lg transform active:scale-95 transition-all"
                             >
@@ -120,21 +124,29 @@ function App() {
                 <section className="space-y-4">
                     <h2 className="text-xl font-semibold text-slate-300">Blocked Applications</h2>
                     <div className="flex gap-2">
-                        <input 
-                            type="text" 
-                            placeholder="e.g. WhatsApp.exe" 
+                        <input
+                            type="text"
+                            placeholder="e.g. WhatsApp.exe"
                             value={newApp}
                             onChange={(e) => setNewApp(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                             className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
                             disabled={isLocked}
                         />
-                        <button 
+                        <button
                             onClick={handleAdd}
                             disabled={isLocked}
                             className="px-6 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50"
                         >
                             Add
+                        </button>
+                        <button
+                            onClick={() => setIsSelectorOpen(true)}
+                            disabled={isLocked}
+                            className="px-4 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 text-slate-300"
+                            title="Select from installed apps"
+                        >
+                            ☰
                         </button>
                     </div>
 
@@ -154,7 +166,7 @@ function App() {
                                         </span>
                                     )}
                                 </div>
-                                <button 
+                                <button
                                     onClick={() => handleRemove(app)}
                                     disabled={isLocked}
                                     className="text-slate-500 hover:text-red-400 disabled:opacity-30 p-1"
@@ -166,6 +178,13 @@ function App() {
                     </div>
                 </section>
             </div>
+
+            <AppSelector
+                isOpen={isSelectorOpen}
+                onClose={() => setIsSelectorOpen(false)}
+                onSave={handleSaveApps}
+                currentlyBlocked={config.blocked_apps || []}
+            />
         </div>
     );
 }

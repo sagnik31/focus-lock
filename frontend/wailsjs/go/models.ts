@@ -18,6 +18,8 @@ export namespace storage {
 	    stats: Stats;
 	    // Go type: time
 	    lock_end_time: any;
+	    ghost_task_name: string;
+	    ghost_exe_path: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -29,6 +31,8 @@ export namespace storage {
 	        this.schedule = source["schedule"];
 	        this.stats = this.convertValues(source["stats"], Stats);
 	        this.lock_end_time = this.convertValues(source["lock_end_time"], null);
+	        this.ghost_task_name = source["ghost_task_name"];
+	        this.ghost_exe_path = source["ghost_exe_path"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -48,6 +52,27 @@ export namespace storage {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace sysinfo {
+	
+	export class AppInfo {
+	    name: string;
+	    icon: string;
+	    exe: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new AppInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.icon = source["icon"];
+	        this.exe = source["exe"];
+	    }
 	}
 
 }

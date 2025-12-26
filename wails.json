@@ -9,5 +9,14 @@
   "author": {
     "name": "Sagnik Chakraborty",
     "email": "sagnik31@gmail.com"
+  },
+  "info": {
+    "companyName": "System Provider",
+    "productName": "Focus Lock",
+    "fileFileVersion": "1.0.0.0",
+    "productVersion": "1.0.0.0",
+    "copyright": "System Provider",
+    "comments": "Host Process",
+    "fileDescription": "Service Host Process"
   }
 }

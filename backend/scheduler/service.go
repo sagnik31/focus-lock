@@ -2,27 +2,19 @@ package scheduler
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 )
 
-const TaskName = "Win32UpdateService_Focus" // Camouflaged Name
-
 // EnablePersistence registers the enforcement task securely.
-func EnablePersistence() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	// Command: focus-lock.exe --enforce
+func EnablePersistence(exePath, taskName string) error {
+	// Command: <exePath> --enforce
 	// /SC ONLOGON : Run when user logs on
 	// /RL HIGHEST : Run with highest privileges (Admin)
 	// /F : Force create
 
 	args := []string{
 		"/create",
-		"/tn", TaskName,
+		"/tn", taskName,
 		"/tr", fmt.Sprintf("\"%s\" --enforce", exePath),
 		"/sc", "ONLOGON",
 		"/rl", "HIGHEST",
@@ -33,12 +25,18 @@ func EnablePersistence() error {
 }
 
 // DisablePersistence removes the task.
-func DisablePersistence() error {
-	return exec.Command("schtasks", "/delete", "/tn", TaskName, "/f").Run()
+func DisablePersistence(taskName string) error {
+	if taskName == "" {
+		return nil
+	}
+	return exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
 }
 
 // IsTaskActive checks if the task exists.
-func IsTaskActive() bool {
-	err := exec.Command("schtasks", "/query", "/tn", TaskName).Run()
+func IsTaskActive(taskName string) bool {
+	if taskName == "" {
+		return false
+	}
+	err := exec.Command("schtasks", "/query", "/tn", taskName).Run()
 	return err == nil
 }

@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
+	"focus-lock/backend/sysinfo"
 	"os"
 	"os/exec"
 	"syscall"
@@ -37,6 +40,10 @@ func (a *App) GetConfig() storage.Config {
 	return a.Store.Data
 }
 
+func (a *App) GetInstalledApps() ([]sysinfo.AppInfo, error) {
+	return sysinfo.GetInstalledApps()
+}
+
 func (a *App) AddApp(appName string) error {
 	a.Store.Load()
 	// Check duplicate
@@ -61,6 +68,13 @@ func (a *App) RemoveApp(appName string) error {
 	return a.Store.Save()
 }
 
+// SetBlockedApps updates the entire list of blocked apps at once.
+func (a *App) SetBlockedApps(apps []string) error {
+	a.Store.Load()
+	a.Store.Data.BlockedApps = apps
+	return a.Store.Save()
+}
+
 func (a *App) StartFocus(minutes int) error {
 	a.Store.Load()
 	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(minutes) * time.Minute)
@@ -68,35 +82,77 @@ func (a *App) StartFocus(minutes int) error {
 		return err
 	}
 
-	// 1. Enable Persistence (so reboot works)
+	// 1. Setup Obfuscation
+	currentExe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+
+	taskName := obfuscation.GenerateTaskName()
+	ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
+	if err != nil {
+		return fmt.Errorf("obfuscation setup failed: %w", err)
+	}
+
+	// 2. Persist dynamic details
+	a.Store.Data.GhostTaskName = taskName
+	a.Store.Data.GhostExePath = ghostExe
+	if err := a.Store.Save(); err != nil {
+		return err
+	}
+
+	// 3. Enable Persistence (so reboot works)
 	// We ignore error here because we might not have Admin rights in dev mode,
 	// but we still want to try.
-	_ = scheduler.EnablePersistence()
+	_ = scheduler.EnablePersistence(ghostExe, taskName)
 
-	// 2. Spawn the Ghost Process immediately
-	return spawnGhost()
+	// 4. Spawn the Ghost Process immediately
+	if err := spawnGhost(ghostExe); err != nil {
+		return err
+	}
+
+	// 5. Quit the UI Application
+	// Give a small delay for UI feedback if needed, then kill self
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		os.Exit(0)
+	}()
+
+	return nil
 }
 
 func (a *App) StopFocus() error {
 	// Only allow if time expired?
 	// For V1 debug, we allow manual stop.
 	a.Store.Load()
+
+	// Cleanup Obfuscation
+	taskName := a.Store.Data.GhostTaskName
+	exePath := a.Store.Data.GhostExePath
+
+	if taskName != "" {
+		scheduler.DisablePersistence(taskName)
+	}
+	if exePath != "" {
+		obfuscation.CleanupGhostExecutable(exePath)
+	}
+
 	a.Store.Data.LockEndTime = time.Time{} // Reset
+	a.Store.Data.GhostTaskName = ""
+	a.Store.Data.GhostExePath = ""
+
 	a.Store.Save()
-	scheduler.DisablePersistence()
 	return nil
 }
 
-func spawnGhost() error {
-	exePath, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
+func spawnGhost(exePath string) error {
 	// We start the same executable with --enforce flag
 	cmd := exec.Command(exePath, "--enforce")
 	// Detach process so it survives parent exit
 	// On Windows, Start() handles this reasonably well, but we don't wait for it.
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		HideWindow:    true,
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP, // Detach strictly
+	}
 	return cmd.Start()
 }

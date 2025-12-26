@@ -9,10 +9,12 @@ import (
 )
 
 type Config struct {
-	BlockedApps []string          `json:"blocked_apps"`
-	Schedule    map[string]string `json:"schedule,omitempty"` // "Mon": "09:00-17:00"
-	Stats       Stats             `json:"stats"`
-	LockEndTime time.Time         `json:"lock_end_time"` // Zero if not locked
+	BlockedApps   []string          `json:"blocked_apps"`
+	Schedule      map[string]string `json:"schedule,omitempty"` // "Mon": "09:00-17:00"
+	Stats         Stats             `json:"stats"`
+	LockEndTime   time.Time         `json:"lock_end_time"`   // Zero if not locked
+	GhostTaskName string            `json:"ghost_task_name"` // Obfuscated task name
+	GhostExePath  string            `json:"ghost_exe_path"`  // Path to obfuscated executable
 }
 
 type Stats struct {
@@ -30,7 +32,7 @@ func NewStore() (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	dir := filepath.Join(configDir, "FocusLock")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err

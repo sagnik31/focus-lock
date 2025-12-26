@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"focus-lock/backend/protection"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
 	"os"
@@ -16,6 +17,13 @@ import (
 var assets embed.FS
 
 func main() {
+	// Enable Anti-Termination Protection
+	// This prevents the user from killing the process via Task Manager
+	if err := protection.ProtectProcess(); err != nil {
+		fmt.Printf("Warning: Failed to enable process protection: %v\n", err)
+		// We initiate it but don't crash if it fails (e.g. dev environment restrictions)
+	}
+
 	// 1. Check for "--enforce" flag
 	if len(os.Args) > 1 && os.Args[1] == "--enforce" {
 		// Headless Mode
@@ -23,6 +31,15 @@ func main() {
 		if err != nil {
 			return
 		}
+
+		// Enable Critical Process Status (BSOD if killed)
+		if err := protection.SetCritical(true); err != nil {
+			fmt.Printf("Failed to set critical status: %v\n", err)
+		} else {
+			// Ensure we disable it if we exit gracefully
+			defer protection.SetCritical(false)
+		}
+
 		store.Load()
 		watchdog.StartEnforcer(store)
 		return
