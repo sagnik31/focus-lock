@@ -88,8 +88,18 @@ Section
 
     !insertmacro wails.files
 
-    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
-    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
+    # Copy the registration script
+    File "..\..\scripts\register_task.ps1"
+
+    # Execute the registration script (Silent)
+    # Using ExecWait with powershell
+    DetailPrint "Registering UAC Bypass Task..."
+    ExecWait 'powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File "$INSTDIR\register_task.ps1"'
+
+    # Create UAC Bypass Shortcuts
+    # Shortcut points to schtasks.exe, but uses the Icon from focus-lock.exe
+    CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "schtasks.exe" "/run /tn \"FocusLockLauncher\"" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
+    CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "schtasks.exe" "/run /tn \"FocusLockLauncher\"" "$INSTDIR\${PRODUCT_EXECUTABLE}" 0
 
     !insertmacro wails.associateFiles
     !insertmacro wails.associateCustomProtocols
