@@ -8,9 +8,11 @@
 ## ✨ Key Features
 
 *   **🛡️ Unstoppable Sessions**: Once a focus session starts, it cannot be cancelled. The application marks itself as a Critical Process (`RtlSetProcessIsCritical`). Termination attempts trigger a system crash (BSOD).
+*   **🌐 Secure Network Timer**: Uses **NTP (Network Time Protocol)** to fetch the exact time from reliable servers (Google, Microsoft). Changing the local system clock will **NOT** bypass the lock.
+*   **🔒 Registry Persistence**: Session state and encryption keys are stored deeply in the **Windows Registry**, making the lock resilient to file deletion or manual tampering.
 *   **👻 Ghost Process**: A background "Ghost" process (with an obfuscated, system-like name) monitors the lock state and enforces blocking, ensuring protection even if the main UI is closed.
-*   **⏱️ Secure Timer**: Uses **monotonic time** to track session duration. Changing the system clock (e.g., setting the date forward) will **NOT** bypass the lock.
-*   **🚫 Smart Application Blocking**:
+*   **🔎 Smart App Discovery**: Automatically scans for installed programs and Windows Store apps, filtering out system components and helper executables to provide a clean, relevant list of applications to block.
+*   **🚫 Smart Blocking**:
     *   Blocks applications by **filename** (e.g., `WhatsApp.exe`) and **internal metadata** (Product Name/Description).
     *   Renaming a blocked executable (e.g., renaming `game.exe` to `notepad.exe`) will not bypass the block.
 *   **⚡ UAC Bypass**: Includes a setup script to create a secure shortcut, allowing you to launch the application without checking "Run as Administrator" every time.

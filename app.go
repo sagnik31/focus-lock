@@ -82,6 +82,7 @@ func (a *App) SetBlockedApps(apps []string) error {
 func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
 	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(seconds) * time.Second)
+	a.Store.Data.RemainingDuration = time.Duration(seconds) * time.Second
 	if err := a.Store.Save(); err != nil {
 		return err
 	}
@@ -142,6 +143,7 @@ func (a *App) StopFocus() error {
 	}
 
 	a.Store.Data.LockEndTime = time.Time{} // Reset
+	a.Store.Data.RemainingDuration = 0
 	a.Store.Data.GhostTaskName = ""
 	a.Store.Data.GhostExePath = ""
 

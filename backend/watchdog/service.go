@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"fmt"
+	"focus-lock/backend/ntp"
 	"focus-lock/backend/storage"
 	"os"
 	"path/filepath"
@@ -49,9 +50,48 @@ func StartEnforcer(store *storage.Store) {
 		return
 	}
 
-	remaining := time.Until(store.Data.LockEndTime)
+	// SECURITY: Check Network Time to detect system time manipulation (e.g. user rebooted and changed BIOS time)
+	// SECURITY: Check Network Time to detect system time manipulation
+	offset, err := ntp.GetOffset()
+	now := time.Now()
+	var remaining time.Duration
+
+	// 1. OFFLINE / NTP FAILURE FALLBACK
+	if err != nil {
+		debugLog(fmt.Sprintf("NTP Check failed: %s. Using Usage-Based Countdown.", err.Error()))
+
+		// Fallback: If we trust the local timer, the user could have skipped ahead.
+		// Instead, we trust RemainingDuration.
+		// We RESET LockEndTime to Now + RemainingDuration.
+		// This effectively PAUSES the timer while the machine was off/offline.
+		// The user must spend 'RemainingDuration' amount of time ONLINE or RUNNING.
+
+		if store.Data.RemainingDuration > 0 {
+			remaining = store.Data.RemainingDuration
+			// Reset end time to prevent immediate unlocking if system time jumped
+			store.Data.LockEndTime = now.Add(remaining)
+			store.Save()
+			debugLog(fmt.Sprintf("Offline Fallback: Resuming with %v remaining", remaining))
+		} else {
+			// Weird state: LockEndTime set but RemainingDuration 0?
+			// Maybe old version. Fallback to system time check.
+			remaining = store.Data.LockEndTime.Sub(now)
+		}
+	} else {
+		// 2. ONLINE / NTP SUCCESS
+		debugLog(fmt.Sprintf("NTP Success. Offset: %v", offset))
+		now = now.Add(offset)
+		remaining = store.Data.LockEndTime.Sub(now)
+
+		// Sync RemainingDuration valid
+		if remaining > 0 {
+			store.Data.RemainingDuration = remaining
+			store.Save()
+		}
+	}
+
 	if remaining <= 0 {
-		debugLog("Lock time already expired. Exiting.")
+		debugLog("Lock time already expired (Network Validated). Exiting.")
 		return
 	}
 
@@ -61,22 +101,47 @@ func StartEnforcer(store *storage.Store) {
 	// Comparisons (After, Before) use the monotonic reading if present.
 	// This means changing the System Wall Clock will NOT affect this deadline.
 	monotonicDeadline := time.Now().Add(remaining)
+	monotonicStartTime := time.Now()
+	initialDuration := remaining
 
 	debugLog(fmt.Sprintf("Locking for %v (Until monotonic: %v)", remaining, monotonicDeadline))
 
+	// Main Polling Ticker
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// Check expiry against MONOTONIC deadline, ignoring wall clock changes
-		if time.Now().After(monotonicDeadline) {
-			debugLog("Lock time expired (Monotonic match). Exiting Enforcer.")
-			return
-		}
+	// Update Loop: Periodically save remaining usage
+	usageTicker := time.NewTicker(20 * time.Second) // Save progress every 20s
+	defer usageTicker.Stop()
 
-		// Reload store only to check for new BLOCKED APPS, not for time
-		store.Load()
-		enforce(store.Data.BlockedApps, store)
+	for {
+		select {
+		case <-ticker.C:
+			// Check expiry against MONOTONIC deadline
+			if time.Now().After(monotonicDeadline) {
+				debugLog("Lock time expired (Monotonic match). Exiting Enforcer.")
+				store.Data.RemainingDuration = 0
+				store.Save()
+				return
+			}
+
+			// Reload store only to check for new BLOCKED APPS
+			// We DO NOT reload time here to avoid race conditions or external edits
+			store.Load()
+			enforce(store.Data.BlockedApps, store)
+
+		case <-usageTicker.C:
+			// Decrement RemainingDuration based on elapsed monotonic time
+			elapsed := time.Since(monotonicStartTime)
+			newRemaining := initialDuration - elapsed
+			if newRemaining < 0 {
+				newRemaining = 0
+			}
+
+			// Persist progress. If PC crashes, we lose at most 20s.
+			store.Data.RemainingDuration = newRemaining
+			store.Save()
+		}
 	}
 }
 

@@ -18,6 +18,7 @@ export namespace storage {
 	    stats: Stats;
 	    // Go type: time
 	    lock_end_time: any;
+	    remaining_duration: number;
 	    ghost_task_name: string;
 	    ghost_exe_path: string;
 	
@@ -31,6 +32,7 @@ export namespace storage {
 	        this.schedule = source["schedule"];
 	        this.stats = this.convertValues(source["stats"], Stats);
 	        this.lock_end_time = this.convertValues(source["lock_end_time"], null);
+	        this.remaining_duration = source["remaining_duration"];
 	        this.ghost_task_name = source["ghost_task_name"];
 	        this.ghost_exe_path = source["ghost_exe_path"];
 	    }

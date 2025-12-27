@@ -35,7 +35,8 @@ func getAppsFromRegistry() ([]AppInfo, error) {
 	scanUninstallKeys(uniqueApps)
 
 	// Phase 2: Scan "App Paths" (High reliability for .exe paths)
-	scanAppPaths(uniqueApps)
+	// REMOVED: User requested only "Installed Apps" list style. App Paths often includes helper exes.
+	// scanAppPaths(uniqueApps)
 
 	// Phase 3: Scan Windows Store Apps
 	scanStoreApps(uniqueApps)
@@ -81,6 +82,17 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 				continue
 			}
 
+			// Filter out System Components (Registry flag)
+			sysComp, _, errSys := sk.GetIntegerValue("SystemComponent")
+			if errSys == nil && sysComp == 1 {
+				continue
+			}
+
+			// Filter out by Name Blacklist
+			if isSystemApp(name) {
+				continue
+			}
+
 			// Try to find path from InstallLocation or DisplayIcon
 			// Re-open to read other values if needed, or read all at once above.
 			// simplified for brevity:
@@ -110,48 +122,8 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 	}
 }
 
-func scanAppPaths(apps map[string]AppInfo) {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, appPathsKey, registry.READ)
-	if err != nil {
-		return
-	}
-	defer k.Close()
-
-	subkeys, err := k.ReadSubKeyNames(-1)
-	if err != nil {
-		return
-	}
-
-	for _, exeName := range subkeys {
-		// key name is usually "something.exe"
-		skPath := appPathsKey + `\` + exeName
-		sk, err := registry.OpenKey(registry.LOCAL_MACHINE, skPath, registry.READ)
-		if err != nil {
-			continue
-		}
-
-		// The (Default) value is the full path
-		fullPath, _, err := sk.GetStringValue("")
-		sk.Close()
-
-		if err == nil && fullPath != "" {
-			// Remove quotes if present
-			fullPath = strings.Trim(fullPath, `"`)
-
-			// Check if file exists
-			if _, err := os.Stat(fullPath); err == nil {
-				key := strings.ToLower(fullPath)
-				// Overwrite or add. App Paths is usually more accurate for the .exe location
-				apps[key] = AppInfo{
-					Name:     strings.TrimSuffix(exeName, filepath.Ext(exeName)), // "excel" from "excel.exe"
-					Exe:      exeName,
-					FullPath: fullPath,
-					Source:   "AppPath",
-				}
-			}
-		}
-	}
-}
+// scanAppPaths is removed as per user request to match "Installed Apps" list.
+// func scanAppPaths(apps map[string]AppInfo) { ... }
 
 func scanStoreApps(apps map[string]AppInfo) {
 	// Accessing HKCU Store apps registry
@@ -179,14 +151,17 @@ func scanStoreApps(apps map[string]AppInfo) {
 
 		// Store apps often have a DisplayName that is a reference string (e.g., @{Microsoft.App...})
 		// Resolving that requires calling a Windows DLL, which is complex.
-		// We filter out obvious system junk or empty names.
+		// STRICT FILTERING: Use only human-readable names.
 		if packageRoot != "" {
-			// If DisplayName is cryptic or empty, use the package ID name
-			if displayName == "" || strings.HasPrefix(displayName, "ms-resource:") {
-				parts := strings.Split(subkeyName, "_")
-				if len(parts) > 0 {
-					displayName = parts[0]
-				}
+			// If DisplayName is cryptic or empty, SKIP IT.
+			// We do NOT want to show @{...} or ms-resource:...
+			if displayName == "" || strings.HasPrefix(displayName, "@{") || strings.HasPrefix(displayName, "ms-resource:") {
+				continue
+			}
+
+			// Filter out by Name Blacklist
+			if isSystemApp(displayName) {
+				continue
 			}
 
 			// Find an executable inside the package root
@@ -246,4 +221,45 @@ func findLargestExe(dir string) string {
 		}
 	}
 	return bestExe
+}
+
+// isSystemApp checks if the app name contains keywords indicating it's a system component/driver/runtime.
+func isSystemApp(name string) bool {
+	lowerName := strings.ToLower(name)
+	keywords := []string{
+		"runtime",
+		"framework",
+		"redistributable",
+		"middleware",
+		"interop",
+		"bios",
+		"driver",
+		"uefi",
+		"support",
+		"helper",
+		"service",
+		"updater",
+		"installer",
+		"language pack",
+		"physx",
+		"directx",
+		"vulkan",
+		"opengl",
+		"opencl",
+	}
+
+	for _, kw := range keywords {
+		if strings.Contains(lowerName, kw) {
+			return true
+		}
+	}
+	// Specific checks for common noise
+	if strings.Contains(lowerName, "windows") && strings.Contains(lowerName, "sdk") {
+		return true
+	}
+	if strings.Contains(lowerName, "microsoft") && strings.Contains(lowerName, "visual c++") {
+		return true
+	}
+
+	return false
 }

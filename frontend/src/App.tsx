@@ -127,11 +127,14 @@ function App() {
                 <section className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 text-center">
                     {isLocked ? (
                         <div className="space-y-4">
-                            <div className="text-6xl font-mono font-bold tracking-widest text-blue-400">
-                                {hoursLeft > 0 ? (
-                                    <span>{hoursLeft.toString().padStart(2, '0')}:</span>
-                                ) : null}
-                                {minutesLeft.toString().padStart(2, '0')}:{secondsLeft.toString().padStart(2, '0')}
+                            <div className="flex items-baseline justify-center gap-2">
+                                <div className="text-5xl font-bold text-blue-400">
+                                    {hoursLeft > 0 ? (
+                                        <span>{hoursLeft} hrs </span>
+                                    ) : null}
+                                    <span>{minutesLeft} mins</span>
+                                </div>
+                                <span className="text-slate-400 text-sm">remaining</span>
                             </div>
                             <p className="text-slate-400 text-sm">Focus Mode Active</p>
                         </div>
