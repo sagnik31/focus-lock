@@ -23,9 +23,12 @@ type Config struct {
 }
 
 type Stats struct {
-	KillCounts       map[string]int `json:"kill_counts"`
-	BlockedFrequency map[string]int `json:"blocked_frequency"`
+	KillCounts       map[string]int   `json:"kill_counts"`
+	BlockedFrequency map[string]int   `json:"blocked_frequency"`
+	BlockedDuration  map[string]int64 `json:"blocked_duration"` // Total seconds blocked
 }
+
+// Methods for Stats
 
 type Store struct {
 	mu           sync.Mutex
@@ -173,28 +176,33 @@ func (s *Store) IncrementKillCount(appName string) {
 	s.Save() // Auto-save on stats update
 }
 
-func (s *Store) IncrementBlockedCounts(apps []string) {
+func (s *Store) UpdateBlockedStats(apps []string, durationSec int) {
 	s.mu.Lock()
 	if s.Data.Stats.BlockedFrequency == nil {
 		s.Data.Stats.BlockedFrequency = make(map[string]int)
 	}
+	if s.Data.Stats.BlockedDuration == nil {
+		s.Data.Stats.BlockedDuration = make(map[string]int64)
+	}
+
 	for _, app := range apps {
 		s.Data.Stats.BlockedFrequency[app]++
+		s.Data.Stats.BlockedDuration[app] += int64(durationSec)
 	}
 	s.mu.Unlock()
 	s.Save()
 }
 
-func (s *Store) GetBlockedFrequency() map[string]int {
+func (s *Store) GetBlockedDuration() map[string]int64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.Data.Stats.BlockedFrequency == nil {
-		return make(map[string]int)
+	if s.Data.Stats.BlockedDuration == nil {
+		return make(map[string]int64)
 	}
 
-	copyMap := make(map[string]int, len(s.Data.Stats.BlockedFrequency))
-	for k, v := range s.Data.Stats.BlockedFrequency {
+	copyMap := make(map[string]int64, len(s.Data.Stats.BlockedDuration))
+	for k, v := range s.Data.Stats.BlockedDuration {
 		copyMap[k] = v
 	}
 	return copyMap

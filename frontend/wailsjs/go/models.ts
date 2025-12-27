@@ -3,6 +3,7 @@ export namespace storage {
 	export class Stats {
 	    kill_counts: Record<string, number>;
 	    blocked_frequency: Record<string, number>;
+	    blocked_duration: Record<string, number>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Stats(source);
@@ -12,6 +13,7 @@ export namespace storage {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kill_counts = source["kill_counts"];
 	        this.blocked_frequency = source["blocked_frequency"];
+	        this.blocked_duration = source["blocked_duration"];
 	    }
 	}
 	export class Config {

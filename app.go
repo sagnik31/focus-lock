@@ -104,8 +104,8 @@ func (a *App) StartFocus(seconds int) error {
 	a.Store.Data.GhostTaskName = taskName
 	a.Store.Data.GhostExePath = ghostExe
 
-	// Increment Blocked Counts
-	a.Store.IncrementBlockedCounts(a.Store.Data.BlockedApps)
+	// Increment Blocked Counts & Duration
+	a.Store.UpdateBlockedStats(a.Store.Data.BlockedApps, seconds)
 
 	if err := a.Store.Save(); err != nil {
 		return err
@@ -158,20 +158,23 @@ func (a *App) StopFocus() error {
 
 func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
 	// a.Store.Load() // Not needed if we use safe getter, but good for refresh
-	freqMap := a.Store.GetBlockedFrequency()
+	durationMap := a.Store.GetBlockedDuration()
 
 	type kv struct {
-		Key   string
-		Value int
+		Key      string
+		Duration int64
 	}
 
 	var ss []kv
-	for k, v := range freqMap {
+	for k, v := range durationMap {
 		ss = append(ss, kv{k, v})
 	}
 
 	sort.Slice(ss, func(i, j int) bool {
-		return ss[i].Value > ss[j].Value
+		if ss[i].Duration != ss[j].Duration {
+			return ss[i].Duration > ss[j].Duration // Duration Descending
+		}
+		return strings.ToLower(ss[i].Key) < strings.ToLower(ss[j].Key) // Name Ascending (Alphabetical)
 	})
 
 	// Get top 5
