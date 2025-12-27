@@ -3,6 +3,7 @@ package main
 import (
 	"embed"
 	"fmt"
+	"focus-lock/backend/bridge"
 	"focus-lock/backend/protection"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
@@ -46,7 +47,7 @@ func main() {
 	}
 
 	if len(os.Args) > 1 && os.Args[1] == "--test-spawn" {
-		app := NewApp()
+		app := bridge.NewApp()
 		fmt.Println("Starting focus for 1 minute (Headless Test)...")
 		if err := app.StartFocus(1); err != nil {
 			fmt.Println("Error starting focus:", err)
@@ -59,7 +60,7 @@ func main() {
 	}
 
 	// 2. UI Mode
-	app := NewApp()
+	app := bridge.NewApp()
 
 	err := wails.Run(&options.App{
 		Title:  "Focus Lock",
@@ -69,7 +70,7 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
+		OnStartup:        app.Startup,
 		Bind: []interface{}{
 			app,
 		},
