@@ -62,6 +62,7 @@ export namespace sysinfo {
 	    name: string;
 	    icon: string;
 	    exe: string;
+	    source: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppInfo(source);
@@ -72,6 +73,7 @@ export namespace sysinfo {
 	        this.name = source["name"];
 	        this.icon = source["icon"];
 	        this.exe = source["exe"];
+	        this.source = source["source"];
 	    }
 	}
 

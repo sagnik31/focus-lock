@@ -9,6 +9,8 @@ function App() {
     const [newApp, setNewApp] = useState("");
     // Time state managed by InlineKeypad internal buffer
     // Seconds removed per new design requirement
+    const [pendingSession, setPendingSession] = useState<{ h: number, m: number } | null>(null);
+    const [showConfirm, setShowConfirm] = useState(false);
     const [error, setError] = useState("");
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
@@ -68,20 +70,30 @@ function App() {
         }
     };
 
-    const handleStart = async (h: number, m: number) => {
+    // Called by Keypad "OK"
+    const handleRequestStart = (h: number, m: number) => {
+        const totalSeconds = (h * 3600) + (m * 60);
+        if (totalSeconds <= 0) {
+            setError("Duration must be greater than 0");
+            return;
+        }
+        setPendingSession({ h, m });
+        setShowConfirm(true);
+    };
+
+    const confirmStart = async () => {
+        if (!pendingSession) return;
         try {
+            const { h, m } = pendingSession;
             const totalSeconds = (h * 3600) + (m * 60);
-            if (totalSeconds <= 0) {
-                setError("Duration must be greater than 0");
-                return;
-            }
             await StartFocus(totalSeconds);
+            setShowConfirm(false);
+            setPendingSession(null);
             refresh();
         } catch (err: any) {
             setError("Failed to start: " + err);
         }
     };
-
 
     if (!config) return <div className="p-8 text-white">Loading...</div>;
 
@@ -94,7 +106,7 @@ function App() {
     const secondsLeft = timeLeft % 60;
 
     return (
-        <div id="app" className="min-h-screen bg-slate-900 text-slate-100 p-8 font-sans">
+        <div id="app" className="min-h-screen bg-slate-900 text-slate-100 p-8 font-sans relative">
             <div className="w-full space-y-8">
                 <header className="flex justify-between items-center border-b border-slate-700 pb-4">
                     <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
@@ -126,7 +138,7 @@ function App() {
                     ) : (
                         <div className="space-y-4">
                             <p className="text-slate-400 text-sm mb-4">Set Duration</p>
-                            <InlineKeypad onStart={handleStart} />
+                            <InlineKeypad onStart={handleRequestStart} />
                         </div>
                     )}
                 </section>
@@ -206,6 +218,64 @@ function App() {
                 onSave={handleSaveApps}
                 currentlyBlocked={config.blocked_apps || []}
             />
+
+            {/* Confirmation Modal */}
+            {showConfirm && pendingSession && (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-6">
+                        <div className="space-y-2 text-center">
+                            <h3 className="text-2xl font-bold text-white">Start Focus Session?</h3>
+                            <p className="text-slate-400">You are about to lock your device.</p>
+                        </div>
+
+                        <div className="bg-slate-900/50 rounded-lg p-4 space-y-3">
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Duration</span>
+                                <span className="text-xl font-bold text-blue-400">
+                                    {pendingSession.h > 0 ? `${pendingSession.h}h ` : ''}{pendingSession.m}m
+                                </span>
+                            </div>
+                            <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-400">Apps Blocked</span>
+                                <span className="text-white font-semibold">{config.blocked_apps.length} Applications</span>
+                            </div>
+                        </div>
+
+                        {config.blocked_apps.length > 0 && (
+                            <div className="text-sm text-slate-500">
+                                <p className="mb-2">Blocking:</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {config.blocked_apps.slice(0, 5).map(app => (
+                                        <span key={app} className="bg-slate-700 px-2 py-1 rounded text-slate-300 text-xs">
+                                            {appMap.get(app.toLowerCase())?.name || app}
+                                        </span>
+                                    ))}
+                                    {config.blocked_apps.length > 5 && (
+                                        <span className="text-slate-600 px-2 py-1 text-xs">
+                                            +{config.blocked_apps.length - 5} more
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex gap-4 pt-2">
+                            <button
+                                onClick={() => setShowConfirm(false)}
+                                className="flex-1 px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmStart}
+                                className="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold shadow-lg shadow-red-900/20 transition-all transform hover:scale-[1.02]"
+                            >
+                                START FOCUS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
