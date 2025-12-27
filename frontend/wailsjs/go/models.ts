@@ -2,6 +2,7 @@ export namespace storage {
 	
 	export class Stats {
 	    kill_counts: Record<string, number>;
+	    blocked_frequency: Record<string, number>;
 	
 	    static createFrom(source: any = {}) {
 	        return new Stats(source);
@@ -10,6 +11,7 @@ export namespace storage {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.kill_counts = source["kill_counts"];
+	        this.blocked_frequency = source["blocked_frequency"];
 	    }
 	}
 	export class Config {

@@ -9,6 +9,8 @@ export function GetConfig():Promise<storage.Config>;
 
 export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 
+export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;
+
 export function RemoveApp(arg1:string):Promise<void>;
 
 export function SetBlockedApps(arg1:Array<string>):Promise<void>;

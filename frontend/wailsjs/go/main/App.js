@@ -14,6 +14,10 @@ export function GetInstalledApps() {
   return window['go']['main']['App']['GetInstalledApps']();
 }
 
+export function GetTopBlockedApps() {
+  return window['go']['main']['App']['GetTopBlockedApps']();
+}
+
 export function RemoveApp(arg1) {
   return window['go']['main']['App']['RemoveApp'](arg1);
 }

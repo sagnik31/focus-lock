@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps } from "../wailsjs/go/main/App";
+import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps } from "../wailsjs/go/main/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { AppSelector } from "./components/AppSelector";
 import { InlineKeypad } from "./components/InlineKeypad";
@@ -14,11 +14,14 @@ function App() {
     const [error, setError] = useState("");
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
+    const [topApps, setTopApps] = useState<sysinfo.AppInfo[]>([]);
 
     const refresh = async () => {
         try {
             const data = await GetConfig();
             setConfig(data);
+            const top = await GetTopBlockedApps();
+            setTopApps(top);
         } catch (e) {
             console.error(e);
         }
@@ -30,6 +33,9 @@ function App() {
 
         // Fetch installed apps initially to populate names/icons
         GetInstalledApps().then(setInstalledApps).catch(console.error);
+
+        // Fetch top apps initially
+        GetTopBlockedApps().then(setTopApps).catch(console.error);
 
         return () => clearInterval(interval);
     }, []);
@@ -47,6 +53,16 @@ function App() {
         try {
             await AddApp(newApp);
             setNewApp("");
+            refresh();
+        } catch (err: any) {
+            setError(err.toString());
+        }
+    };
+
+    // Quick add from top apps
+    const handleAddByName = async (name: string) => {
+        try {
+            await AddApp(name);
             refresh();
         } catch (err: any) {
             setError(err.toString());
@@ -124,9 +140,9 @@ function App() {
                 )}
 
                 {/* Timer Section */}
-                <section className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 text-center">
+                <section className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
                     {isLocked ? (
-                        <div className="space-y-4">
+                        <div className="space-y-4 text-center">
                             <div className="flex items-baseline justify-center gap-2">
                                 <div className="text-5xl font-bold text-blue-400">
                                     {hoursLeft > 0 ? (
@@ -139,9 +155,46 @@ function App() {
                             <p className="text-slate-400 text-sm">Focus Mode Active</p>
                         </div>
                     ) : (
-                        <div className="space-y-4">
-                            <p className="text-slate-400 text-sm mb-4">Set Duration</p>
-                            <InlineKeypad onStart={handleRequestStart} />
+                        <div className="flex gap-8 items-start justify-between">
+                            {/* Keypad Section (Left) */}
+                            <div className="space-y-4">
+                                <p className="text-slate-400 text-sm mb-4">Set Focus Duration</p>
+                                <InlineKeypad onStart={handleRequestStart} />
+                            </div>
+
+                            {/* Frequent Apps List (Right) */}
+                            <div className="flex-1 flex flex-col items-end space-y-2 pt-8">
+                                <h3 className="text-slate-400 text-xs uppercase tracking-widest mb-1">Frequently Blocked</h3>
+                                {topApps.length > 0 ? (
+                                    <div className="flex flex-col items-end gap-2">
+                                        {topApps.map(app => {
+                                            const isBlocked = config.blocked_apps.includes(app.exe);
+                                            return (
+                                                <button
+                                                    key={app.exe}
+                                                    onClick={() => !isBlocked && handleAddByName(app.exe)}
+                                                    disabled={isBlocked}
+                                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${isBlocked
+                                                            ? "bg-slate-700/50 text-slate-500 cursor-default"
+                                                            : "bg-slate-700 hover:bg-slate-600 text-slate-200"
+                                                        }`}
+                                                >
+                                                    <span className="font-medium">{app.name}</span>
+                                                    {app.icon ? (
+                                                        <img src={app.icon} alt="" className="w-5 h-5 object-contain" />
+                                                    ) : (
+                                                        <div className="w-5 h-5 bg-slate-600 rounded-sm"></div>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <div className="text-slate-600 text-xs italic">
+                                        No recent apps found.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     )}
                 </section>
@@ -160,20 +213,13 @@ function App() {
                             disabled={isLocked}
                         />
                         <button
-                            onClick={handleAdd}
+                            onClick={() => setIsSelectorOpen(true)}
                             disabled={isLocked}
                             className="px-6 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50"
                         >
-                            Add
+                            Add App
                         </button>
-                        <button
-                            onClick={() => setIsSelectorOpen(true)}
-                            disabled={isLocked}
-                            className="px-4 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50 text-slate-300"
-                            title="Select from installed apps"
-                        >
-                            ☰
-                        </button>
+                        {/* Hamburger menu removed as per request */}
                     </div>
 
                     <div className="grid grid-cols-3 gap-4">

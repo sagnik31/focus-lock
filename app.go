@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -102,6 +103,10 @@ func (a *App) StartFocus(seconds int) error {
 	// 2. Persist dynamic details
 	a.Store.Data.GhostTaskName = taskName
 	a.Store.Data.GhostExePath = ghostExe
+
+	// Increment Blocked Counts
+	a.Store.IncrementBlockedCounts(a.Store.Data.BlockedApps)
+
 	if err := a.Store.Save(); err != nil {
 		return err
 	}
@@ -149,6 +154,54 @@ func (a *App) StopFocus() error {
 
 	a.Store.Save()
 	return nil
+}
+
+func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
+	// a.Store.Load() // Not needed if we use safe getter, but good for refresh
+	freqMap := a.Store.GetBlockedFrequency()
+
+	type kv struct {
+		Key   string
+		Value int
+	}
+
+	var ss []kv
+	for k, v := range freqMap {
+		ss = append(ss, kv{k, v})
+	}
+
+	sort.Slice(ss, func(i, j int) bool {
+		return ss[i].Value > ss[j].Value
+	})
+
+	// Get top 5
+	topCount := 5
+	if len(ss) < topCount {
+		topCount = len(ss)
+	}
+
+	topApps := []string{}
+	for i := 0; i < topCount; i++ {
+		topApps = append(topApps, ss[i].Key)
+	}
+
+	// Resolve AppInfo
+	installed, err := sysinfo.GetInstalledApps()
+	if err != nil {
+		return []sysinfo.AppInfo{}, err // Return empty slice on error
+	}
+
+	result := []sysinfo.AppInfo{} // Initialize as empty slice
+	for _, appName := range topApps {
+		for _, info := range installed {
+			if strings.EqualFold(info.Exe, appName) {
+				result = append(result, info)
+				break
+			}
+		}
+	}
+
+	return result, nil
 }
 
 func spawnGhost(exePath string) error {

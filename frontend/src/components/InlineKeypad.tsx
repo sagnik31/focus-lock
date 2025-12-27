@@ -33,24 +33,24 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
     return (
         <div
-            className="w-full max-w-sm mx-auto bg-[#333333] rounded-lg shadow-2xl overflow-hidden flex flex-col"
+            className="w-56 bg-[#333333] rounded-lg shadow-2xl overflow-hidden flex flex-col"
         >
             {/* Header / Display */}
-            <div className="bg-[#D32F2F] p-6 flex items-center justify-between relative h-32">
+            <div className="bg-[#D32F2F] p-3 flex items-center justify-between relative h-16">
                 <div className="flex items-baseline gap-1 text-white">
-                    <span className="text-6xl font-normal tracking-tight">{displayHours}</span>
-                    <span className="text-xl font-normal opacity-80 mr-4">h</span>
-                    <span className="text-6xl font-normal tracking-tight">{displayMinutes}</span>
-                    <span className="text-xl font-normal opacity-80">m</span>
+                    <span className="text-3xl font-normal tracking-tight">{displayHours}</span>
+                    <span className="text-sm font-normal opacity-80 mr-2">h</span>
+                    <span className="text-3xl font-normal tracking-tight">{displayMinutes}</span>
+                    <span className="text-sm font-normal opacity-80">m</span>
                 </div>
 
                 {/* Backspace Button */}
                 <button
                     onClick={handleBackspace}
-                    className="absolute top-4 right-4 text-white/90 hover:text-white p-2"
+                    className="absolute top-3 right-3 text-white/90 hover:text-white p-1"
                     title="Backspace"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-3 12.59L17.59 17 14 13.41 10.41 17 9 15.59 12.59 12 9 8.41 10.41 7 14 10.59 17.59 7 19 8.41 15.41 12 19 15.59z" />
                     </svg>
                 </button>
@@ -58,11 +58,11 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
             {/* Keypad */}
             <div
-                className="p-4 py-6 text-white"
+                className="p-3 py-4 text-white"
                 style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(3, 1fr)',
-                    gap: '1rem',
+                    gap: '0.5rem',
                     justifyItems: 'center',
                     alignItems: 'center'
                 }}
@@ -71,7 +71,7 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
                     <button
                         key={num}
                         onClick={() => handleNum(num.toString())}
-                        className="w-16 h-16 text-3xl font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                        className="w-10 h-10 text-lg font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
                     >
                         {num}
                     </button>
@@ -80,7 +80,7 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
                 {/* 0 Button - Center column (start at 2) */}
                 <button
                     onClick={() => handleNum("0")}
-                    className="w-16 h-16 text-3xl font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                    className="w-10 h-10 text-lg font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
                     style={{ gridColumnStart: 2 }}
                 >
                     0
@@ -88,23 +88,23 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
                 <button
                     onClick={() => handleNum("00")}
-                    className="w-16 h-16 text-2xl font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                    className="w-10 h-10 text-sm font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
                 >
                     00
                 </button>
             </div>
 
             {/* Footer Actions */}
-            <div className="flex justify-end items-center p-6 gap-8">
+            <div className="flex justify-end items-center p-3 gap-4">
                 <button
                     onClick={handleClear}
-                    className="text-[#E57373] font-bold tracking-widest text-sm hover:opacity-80 py-2"
+                    className="text-[#E57373] font-bold tracking-widest text-xs hover:opacity-80 py-1"
                 >
                     CANCEL
                 </button>
                 <button
                     onClick={handleOK}
-                    className="text-[#E57373] font-bold tracking-widest text-sm hover:opacity-80 py-2"
+                    className="text-[#E57373] font-bold tracking-widest text-xs hover:opacity-80 py-1"
                 >
                     OK
                 </button>

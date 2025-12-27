@@ -23,7 +23,8 @@ type Config struct {
 }
 
 type Stats struct {
-	KillCounts map[string]int `json:"kill_counts"`
+	KillCounts       map[string]int `json:"kill_counts"`
+	BlockedFrequency map[string]int `json:"blocked_frequency"`
 }
 
 type Store struct {
@@ -162,7 +163,6 @@ func (s *Store) computeHMAC(data []byte) string {
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }
-
 func (s *Store) IncrementKillCount(appName string) {
 	s.mu.Lock()
 	if s.Data.Stats.KillCounts == nil {
@@ -171,4 +171,31 @@ func (s *Store) IncrementKillCount(appName string) {
 	s.Data.Stats.KillCounts[appName]++
 	s.mu.Unlock()
 	s.Save() // Auto-save on stats update
+}
+
+func (s *Store) IncrementBlockedCounts(apps []string) {
+	s.mu.Lock()
+	if s.Data.Stats.BlockedFrequency == nil {
+		s.Data.Stats.BlockedFrequency = make(map[string]int)
+	}
+	for _, app := range apps {
+		s.Data.Stats.BlockedFrequency[app]++
+	}
+	s.mu.Unlock()
+	s.Save()
+}
+
+func (s *Store) GetBlockedFrequency() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.Data.Stats.BlockedFrequency == nil {
+		return make(map[string]int)
+	}
+
+	copyMap := make(map[string]int, len(s.Data.Stats.BlockedFrequency))
+	for k, v := range s.Data.Stats.BlockedFrequency {
+		copyMap[k] = v
+	}
+	return copyMap
 }
