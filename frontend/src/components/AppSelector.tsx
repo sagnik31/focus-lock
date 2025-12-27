@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GetInstalledApps } from "../../wailsjs/go/main/App";
+import { GetInstalledApps } from "../../wailsjs/go/bridge/App";
 import { sysinfo } from "../../wailsjs/go/models";
 
 interface AppSelectorProps {
