@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
+import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
 
 function App() {
@@ -34,6 +35,11 @@ function App() {
         // Fetch top apps initially
         GetTopBlockedApps().then(setTopApps).catch(console.error);
 
+        // Request notification permission on load
+        if (Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
+
         return () => clearInterval(interval);
     }, []);
 
@@ -44,6 +50,12 @@ function App() {
         });
         return map;
     }, [installedApps]);
+
+    // Derived State
+    const isLocked = useMemo(() => {
+        if (!config?.lock_end_time) return false;
+        return new Date(config.lock_end_time) > new Date();
+    }, [config]);
 
     const handleAdd = async () => {
         if (!newApp) return;
@@ -100,13 +112,32 @@ function App() {
             const { h, m } = pendingSession;
             const totalSeconds = (h * 3600) + (m * 60);
             await StartFocus(totalSeconds);
+
+            // Success!
             setShowConfirm(false);
             setPendingSession(null);
+
+            // Trigger Notification
+            new Notification("Focus Session Started", {
+                body: `Locked for ${h > 0 ? h + "h " : ""}${m}m. Stay productive!`,
+                requireInteraction: false,
+            });
+
             refresh();
         } catch (err: any) {
             setError("Failed to start: " + err);
         }
     };
+
+    if (isLocked && config) {
+        return (
+            <FocusActive
+                endTime={config.lock_end_time}
+                blockedApps={config.blocked_apps}
+                appMap={appMap}
+            />
+        );
+    }
 
     return (
         <AppLayout
@@ -119,6 +150,7 @@ function App() {
             showConfirm={showConfirm}
             setShowConfirm={setShowConfirm}
             pendingSession={pendingSession}
+            setPendingSession={setPendingSession}
             topApps={topApps}
             appMap={appMap}
             handleAdd={handleAdd}

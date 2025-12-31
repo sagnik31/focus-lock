@@ -1,6 +1,9 @@
+
 import { storage, sysinfo } from "../../wailsjs/go/models";
 import { AppSelector } from "./AppSelector";
 import { InlineKeypad } from "./InlineKeypad";
+import { TimeSeeker } from './TimeSeeker';
+import { useState } from "react";
 
 interface AppLayoutProps {
     config: storage.Config | null;
@@ -11,9 +14,12 @@ interface AppLayoutProps {
     // State
     isSelectorOpen: boolean;
     setIsSelectorOpen: (val: boolean) => void;
+
+    // Session State (Controlled by Parent)
     showConfirm: boolean;
     setShowConfirm: (val: boolean) => void;
     pendingSession: { h: number, m: number } | null;
+    setPendingSession: (val: { h: number, m: number } | null) => void;
 
     // Data
     topApps: sysinfo.AppInfo[];
@@ -28,7 +34,7 @@ interface AppLayoutProps {
     confirmStart: () => void;
 }
 
-export function AppLayout({
+export const AppLayout: React.FC<AppLayoutProps> = ({
     config,
     newApp,
     setNewApp,
@@ -38,6 +44,7 @@ export function AppLayout({
     showConfirm,
     setShowConfirm,
     pendingSession,
+    setPendingSession,
     topApps,
     appMap,
     handleAdd,
@@ -46,154 +53,190 @@ export function AppLayout({
     handleSaveApps,
     handleRequestStart,
     confirmStart
-}: AppLayoutProps) {
+}) => {
+    const [inputMode, setInputMode] = useState<'slider' | 'keypad'>('slider');
 
-    if (!config) return <div className="p-8 text-white">Loading...</div>;
-
-    const isLocked = new Date(config.lock_end_time) > new Date();
-
-    // Calculate time remaining
-    const timeLeft = isLocked ? Math.max(0, Math.floor((new Date(config.lock_end_time).getTime() - new Date().getTime()) / 1000)) : 0;
-    const hoursLeft = Math.floor(timeLeft / 3600);
-    const minutesLeft = Math.floor((timeLeft % 3600) / 60);
+    if (!config) return (
+        <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
+            <div className="animate-pulse">Loading System...</div>
+        </div>
+    );
 
     return (
-        <div id="app" className="min-h-screen bg-slate-900 text-slate-100 p-8 font-sans relative">
-            <div className="w-full space-y-8">
-                <header className="flex justify-between items-center border-b border-slate-700 pb-4">
-                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-                        Focus Lock (v1.1)
-                    </h1>
-                    <div className={`px-3 py-1 rounded-full text-sm font-bold ${isLocked ? 'bg-red-500/20 text-red-400' : 'bg-green-500/20 text-green-400'}`}>
-                        {isLocked ? "LOCKED" : "READY"}
+        <div id="app" className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-hidden selection:bg-blue-500/30 flex flex-col">
+            {/* Ambient Background Effects */}
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2"></div>
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none translate-y-1/2"></div>
+
+            <div className="relative z-10 container mx-auto px-4 py-4 max-w-5xl flex-1 flex flex-col h-full">
+
+                {/* Header */}
+                <header className="flex justify-between items-center mb-6 shrink-0">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-900/20">
+                            <span className="text-white font-bold text-xl">FL</span>
+                        </div>
+                        <h1 className="text-xl font-bold tracking-tight text-slate-200">
+                            Focus Lock
+                        </h1>
+                    </div>
+                    <div className="flex items-center gap-4">
+                        <div className="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-slate-800/50 border border-slate-700/50 text-slate-400 backdrop-blur-sm">
+                            System Ready
+                        </div>
                     </div>
                 </header>
 
                 {error && (
-                    <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-lg">
+                    <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl flex items-center gap-3 backdrop-blur-sm text-sm shrink-0">
+                        <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
                         {error}
                     </div>
                 )}
 
-                {/* Timer Section */}
-                <section className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
-                    {isLocked ? (
-                        <div className="space-y-4 text-center">
-                            <div className="flex items-baseline justify-center gap-2">
-                                <div className="text-5xl font-bold text-blue-400">
-                                    {hoursLeft > 0 ? (
-                                        <span>{hoursLeft} hrs </span>
-                                    ) : null}
-                                    <span>{minutesLeft} mins</span>
+                {/* Main Content Grid - 50/50 Split */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
+
+                    {/* Left Panel: Focus Timer (Hero) */}
+                    <div className="flex flex-col h-full">
+                        <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-white/5 p-6 shadow-2xl relative overflow-hidden group h-full flex flex-col">
+                            <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
+
+                            <div className="relative flex-1 flex flex-col justify-center">
+                                <h2 className="text-2xl font-semibold text-white mb-2">Start Session</h2>
+                                <p className="text-slate-400 mb-8 text-sm leading-relaxed">
+                                    Set your duration. Once started, focus is enforced until time expires.
+                                </p>
+
+                                <div className="bg-slate-950/50 rounded-2xl border border-white/5 shadow-inner flex flex-col justify-center relative overflow-hidden h-[340px]">
+                                    {inputMode === 'slider' ? (
+                                        <>
+                                            <TimeSeeker
+                                                onDurationChange={(h, m) => setPendingSession({ h, m })}
+                                                onStart={() => setShowConfirm(true)} // Trigger confirmation directly
+                                                initialMinutes={pendingSession ? (pendingSession.h * 60 + pendingSession.m) : 15}
+                                            />
+                                            <button
+                                                onClick={() => setInputMode('keypad')}
+                                                className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                            >
+                                                Custom Time &rarr;
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <div className="w-full h-full p-6 flex flex-col items-center justify-center">
+                                            <InlineKeypad onStart={handleRequestStart} />
+                                            <button
+                                                onClick={() => setInputMode('slider')}
+                                                className="mt-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                            >
+                                                &larr; Back to Presets
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                                <span className="text-slate-400 text-sm">remaining</span>
                             </div>
-                            <p className="text-slate-400 text-sm">Focus Mode Active</p>
                         </div>
-                    ) : (
-                        <div className="flex gap-8 items-start justify-between">
-                            {/* Keypad Section (Left) */}
-                            <div className="space-y-4">
-                                <p className="text-slate-400 text-sm mb-4">Set Focus Duration</p>
-                                <InlineKeypad onStart={handleRequestStart} />
+                    </div>
+
+                    {/* Right Panel: Blocked Apps (More prominent) */}
+                    <div className="flex flex-col h-full min-h-0">
+
+                        {/* Quick Actions / Block List */}
+                        <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-white/5 p-6 shadow-xl flex flex-col h-full overflow-hidden">
+                            <div className="flex justify-between items-center mb-6 shrink-0">
+                                <h2 className="text-xl font-semibold text-slate-200">Blocked Apps</h2>
+                                <button
+                                    onClick={() => setIsSelectorOpen(true)}
+                                    className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg shadow-blue-900/20"
+                                >
+                                    + ADD APP
+                                </button>
                             </div>
 
-                            {/* Frequent Apps List (Right) */}
-                            <div className="flex-1 flex flex-col items-end space-y-2 pt-8">
-                                <h3 className="text-slate-400 text-xs uppercase tracking-widest mb-1">Frequently Blocked</h3>
-                                {topApps.length > 0 ? (
-                                    <div className="flex flex-col items-end gap-2">
-                                        {topApps.map(app => {
-                                            const isBlocked = config.blocked_apps.includes(app.exe);
-                                            return (
-                                                <button
-                                                    key={app.exe}
-                                                    onClick={() => !isBlocked && handleAddByName(app.exe)}
-                                                    disabled={isBlocked}
-                                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all ${isBlocked
-                                                        ? "bg-slate-700/50 text-slate-500 cursor-default"
-                                                        : "bg-slate-700 hover:bg-slate-600 text-slate-200"
-                                                        }`}
-                                                >
-                                                    <span className="font-medium">{app.name}</span>
-                                                    {app.icon ? (
-                                                        <img src={app.icon} alt="" className="w-5 h-5 object-contain" />
-                                                    ) : (
-                                                        <div className="w-5 h-5 bg-slate-600 rounded-sm"></div>
-                                                    )}
-                                                </button>
-                                            );
-                                        })}
+                            {/* Add App Input - Larger */}
+                            <div className="relative mb-6 group shrink-0">
+                                <input
+                                    type="text"
+                                    placeholder="Add e.g. steam.exe"
+                                    value={newApp}
+                                    onChange={(e) => setNewApp(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+                                    className="w-full bg-slate-950/50 border border-slate-700/50 focus:border-blue-500/50 rounded-xl px-4 py-3 pl-10 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-500 text-sm"
+                                />
+                                <svg className="w-5 h-5 text-slate-500 absolute left-3.5 top-3 group-focus-within:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+
+                            {/* Apps List - Larger Items */}
+                            <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar min-h-0">
+                                {config.blocked_apps.length === 0 ? (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 opacity-60">
+                                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <span className="text-sm">No locked applications</span>
                                     </div>
                                 ) : (
-                                    <div className="text-slate-600 text-xs italic">
-                                        No recent apps found.
-                                    </div>
+                                    config.blocked_apps.map((exeName) => {
+                                        const appInfo = appMap.get(exeName.toLowerCase());
+                                        return (
+                                            <div key={exeName} className="group flex items-center justify-between bg-slate-800/40 hover:bg-slate-800/80 p-3 rounded-lg border border-white/5 hover:border-white/20 transition-all">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    {appInfo?.icon ? (
+                                                        <img src={appInfo.icon} alt={appInfo.name} className="w-8 h-8 object-contain opacity-90 group-hover:opacity-100 transition-opacity" />
+                                                    ) : (
+                                                        <div className="w-8 h-8 bg-slate-700/50 rounded-lg flex items-center justify-center text-xs text-slate-300 font-bold">
+                                                            {exeName.charAt(0).toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                    <div className="flex flex-col min-w-0">
+                                                        <span className="font-medium text-slate-200 text-sm truncate group-hover:text-white transition-colors">
+                                                            {appInfo?.name || exeName}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleRemove(exeName)}
+                                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
+                                                    title="Remove"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        );
+                                    })
                                 )}
                             </div>
-                        </div>
-                    )}
-                </section>
 
-                {/* Apps Section */}
-                <section className="space-y-4">
-                    <h2 className="text-xl font-semibold text-slate-300">Blocked Applications</h2>
-                    <div className="flex gap-2">
-                        <input
-                            type="text"
-                            placeholder="e.g. WhatsApp.exe"
-                            value={newApp}
-                            onChange={(e) => setNewApp(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
-                            className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                            disabled={isLocked}
-                        />
-                        <button
-                            onClick={() => setIsSelectorOpen(true)}
-                            disabled={isLocked}
-                            className="px-6 bg-slate-700 hover:bg-slate-600 rounded-lg font-semibold disabled:opacity-50"
-                        >
-                            Add App
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-4">
-                        {config.blocked_apps.length === 0 && (
-                            <div className="text-center py-8 text-slate-500 italic border border-dashed border-slate-700 rounded-lg">
-                                No apps blocked. Add one above.
-                            </div>
-                        )}
-                        {config.blocked_apps.map((exeName) => {
-                            const appInfo = appMap.get(exeName.toLowerCase());
-                            return (
-                                <div key={exeName} className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700">
-                                    <div className="flex items-center gap-3">
-                                        {/* Icon */}
-                                        {appInfo?.icon ? (
-                                            <img src={appInfo.icon} alt={appInfo.name} className="w-8 h-8 object-contain" />
-                                        ) : (
-                                            <div className="w-8 h-8 bg-slate-600 rounded flex items-center justify-center text-xs text-white">?</div>
-                                        )}
-
-                                        <div className="flex flex-col">
-                                            {/* Friendly Name */}
-                                            <span className="font-semibold text-white">
-                                                {appInfo?.name || exeName}
-                                            </span>
-                                        </div>
+                            {/* Suggestions - More Visible */}
+                            {topApps.length > 0 && (
+                                <div className="mt-5 pt-5 border-t border-white/10 shrink-0">
+                                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Frequently Blocked Apps</h4>
+                                    <div className="flex flex-wrap gap-2">
+                                        {topApps.slice(0, 6).map(app => (
+                                            !config.blocked_apps.includes(app.exe) && (
+                                                <button
+                                                    key={app.exe}
+                                                    onClick={() => handleAddByName(app.exe)}
+                                                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-800/80 hover:bg-blue-600/20 hover:text-blue-300 hover:border-blue-500/30 border border-slate-700/50 rounded-lg text-sm text-slate-300 transition-all max-w-[180px]"
+                                                >
+                                                    <span className="truncate flex-1 text-left">{app.name}</span>
+                                                    <span className="text-blue-500/50 text-xs font-bold">+</span>
+                                                </button>
+                                            )
+                                        ))}
                                     </div>
-                                    <button
-                                        onClick={() => handleRemove(exeName)}
-                                        disabled={isLocked}
-                                        className="text-slate-500 hover:text-red-400 disabled:opacity-30 p-1"
-                                    >
-                                        Remove
-                                    </button>
                                 </div>
-                            );
-                        })}
+                            )}
+                        </div>
                     </div>
-                </section>
+                </div>
             </div>
 
             <AppSelector
@@ -205,58 +248,49 @@ export function AppLayout({
 
             {/* Confirmation Modal */}
             {showConfirm && pendingSession && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-md w-full p-6 space-y-6">
-                        <div className="space-y-2 text-center">
-                            <h3 className="text-2xl font-bold text-white">Start Focus Session?</h3>
-                            <p className="text-slate-400">You are about to lock your device.</p>
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-6 transform scale-100">
+                        <div className="text-center space-y-2">
+                            <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-500/20">
+                                <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <h3 className="text-lg font-bold text-white">Confirm Lock</h3>
+                            <p className="text-slate-400 text-sm">
+                                You are about to enter a <span className="text-blue-400 font-bold">{pendingSession.h}h {pendingSession.m}m</span> strict focus session.
+                            </p>
                         </div>
 
-                        <div className="bg-slate-900/50 rounded-lg p-4 space-y-3">
+                        <div className="bg-black/20 rounded-lg p-4 border border-white/5 space-y-3">
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400">Duration</span>
-                                <span className="text-xl font-bold text-blue-400">
-                                    {pendingSession.h > 0 ? `${pendingSession.h}h ` : ''}{pendingSession.m}m
-                                </span>
+                                <span className="text-slate-500">Duration</span>
+                                <span className="text-white font-mono font-medium">{pendingSession.h > 0 ? `${pendingSession.h} h` : ''}{pendingSession.m}m 00s</span>
                             </div>
                             <div className="flex justify-between items-center text-sm">
-                                <span className="text-slate-400">Apps Blocked</span>
-                                <span className="text-white font-semibold">{config.blocked_apps.length} Applications</span>
+                                <span className="text-slate-500">Apps Blocked</span>
+                                <span className="text-white font-medium">{config.blocked_apps.length} Applications</span>
                             </div>
                         </div>
 
-                        {config.blocked_apps.length > 0 && (
-                            <div className="text-sm text-slate-500">
-                                <p className="mb-2">Blocking:</p>
-                                <div className="flex flex-wrap gap-2">
-                                    {config.blocked_apps.slice(0, 5).map(app => (
-                                        <span key={app} className="bg-slate-700 px-2 py-1 rounded text-slate-300 text-xs">
-                                            {appMap.get(app.toLowerCase())?.name || app}
-                                        </span>
-                                    ))}
-                                    {config.blocked_apps.length > 5 && (
-                                        <span className="text-slate-600 px-2 py-1 text-xs">
-                                            +{config.blocked_apps.length - 5} more
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="flex gap-4 pt-2">
+                        <div className="flex gap-3">
                             <button
                                 onClick={() => setShowConfirm(false)}
-                                className="flex-1 px-4 py-3 rounded-lg bg-slate-700 hover:bg-slate-600 text-white font-semibold transition-colors"
+                                className="flex-1 px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors text-sm"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={confirmStart}
-                                className="flex-1 px-4 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold shadow-lg shadow-red-900/20 transition-all transform hover:scale-[1.02]"
+                                className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-blue-900/40 transition-all text-sm"
                             >
-                                START FOCUS
+                                Start Focus
                             </button>
                         </div>
+
+                        <p className="text-xs text-center text-slate-500 mt-2">
+                            Session cannot be cancelled once started.
+                        </p>
                     </div>
                 </div>
             )}

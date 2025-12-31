@@ -31,23 +31,44 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
         onStart(h, m);
     };
 
+    // Keyboard support
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key >= '0' && e.key <= '9') {
+                handleNum(e.key);
+            } else if (e.key === 'Backspace') {
+                handleBackspace();
+            } else if (e.key === 'Enter') {
+                handleOK();
+            } else if (e.key === 'Escape') {
+                handleClear();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [buffer]); // Re-bind when buffer changes to ensure state freshness or use functional updates everywhere (already doing so)
+
     return (
         <div
-            className="w-56 bg-[#333333] rounded-lg shadow-2xl overflow-hidden flex flex-col"
+            className="w-56 bg-slate-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden flex flex-col shrink-0"
         >
             {/* Header / Display */}
-            <div className="bg-[#D32F2F] p-3 flex items-center justify-between relative h-16">
+            <div
+                className="bg-gradient-to-r from-blue-600 to-purple-600 px-4 py-3 flex items-center justify-between relative h-16 shadow-inner cursor-text"
+                onClick={() => { /* Visual cue or focus logic if needed */ }}
+            >
                 <div className="flex items-baseline gap-1 text-white">
-                    <span className="text-3xl font-normal tracking-tight">{displayHours}</span>
-                    <span className="text-sm font-normal opacity-80 mr-2">h</span>
-                    <span className="text-3xl font-normal tracking-tight">{displayMinutes}</span>
-                    <span className="text-sm font-normal opacity-80">m</span>
+                    <span className="text-3xl font-bold tracking-tighter drop-shadow-md">{displayHours}</span>
+                    <span className="text-xs font-medium opacity-80 mr-2">h</span>
+                    <span className="text-3xl font-bold tracking-tighter drop-shadow-md">{displayMinutes}</span>
+                    <span className="text-xs font-medium opacity-80">m</span>
                 </div>
 
                 {/* Backspace Button */}
                 <button
                     onClick={handleBackspace}
-                    className="absolute top-3 right-3 text-white/90 hover:text-white p-1"
+                    className="absolute top-3 right-3 text-white/80 hover:text-white p-1 transition-colors"
                     title="Backspace"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -58,7 +79,7 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
             {/* Keypad */}
             <div
-                className="p-3 py-4 text-white"
+                className="p-3 py-3 text-white bg-slate-900"
                 style={{
                     display: 'grid',
                     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -71,7 +92,7 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
                     <button
                         key={num}
                         onClick={() => handleNum(num.toString())}
-                        className="w-10 h-10 text-lg font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                        className="w-10 h-10 text-lg font-medium rounded-full transition-all flex items-center justify-center hover:bg-white/10 active:bg-white/20 text-slate-200"
                     >
                         {num}
                     </button>
@@ -80,7 +101,7 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
                 {/* 0 Button - Center column (start at 2) */}
                 <button
                     onClick={() => handleNum("0")}
-                    className="w-10 h-10 text-lg font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                    className="w-10 h-10 text-lg font-medium rounded-full transition-all flex items-center justify-center hover:bg-white/10 active:bg-white/20 text-slate-200"
                     style={{ gridColumnStart: 2 }}
                 >
                     0
@@ -88,25 +109,25 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
                 <button
                     onClick={() => handleNum("00")}
-                    className="w-10 h-10 text-sm font-normal rounded-full transition-colors flex items-center justify-center hover:bg-white/10 active:bg-white/20"
+                    className="w-10 h-10 text-xs font-medium rounded-full transition-all flex items-center justify-center hover:bg-white/10 active:bg-white/20 text-slate-400"
                 >
                     00
                 </button>
             </div>
 
             {/* Footer Actions */}
-            <div className="flex justify-end items-center p-3 gap-4">
+            <div className="flex justify-between items-center px-4 pb-3 pt-0 gap-4 bg-slate-900">
                 <button
                     onClick={handleClear}
-                    className="text-[#E57373] font-bold tracking-widest text-xs hover:opacity-80 py-1"
+                    className="text-slate-500 font-bold tracking-wider text-[10px] hover:text-slate-300 py-2 transition-colors"
                 >
-                    CANCEL
+                    CLEAR
                 </button>
                 <button
                     onClick={handleOK}
-                    className="text-[#E57373] font-bold tracking-widest text-xs hover:opacity-80 py-1"
+                    className="text-blue-400 font-bold tracking-wider text-[10px] hover:text-blue-300 py-2 transition-colors uppercase"
                 >
-                    OK
+                    CONFIRM
                 </button>
             </div>
         </div>

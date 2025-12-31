@@ -126,13 +126,8 @@ func (a *App) StartFocus(seconds int) error {
 		return err
 	}
 
-	// 5. Quit the UI Application
-	// Give a small delay for UI feedback if needed, then kill self
-	go func() {
-		time.Sleep(200 * time.Millisecond)
-		os.Exit(0)
-	}()
-
+	// 5. App remains open to show "Focus Active" screen
+	// The ghost process handles the actual blocking in the background.
 	return nil
 }
 
