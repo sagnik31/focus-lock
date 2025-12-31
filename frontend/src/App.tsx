@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, SetBlockCommonVPN } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
@@ -95,6 +95,34 @@ function App() {
         }
     };
 
+    // Website Handlers
+    const handleAddSite = async (url: string) => {
+        try {
+            await AddBlockedSite(url);
+            refresh();
+        } catch (err: any) {
+            setError(err.toString());
+        }
+    };
+
+    const handleRemoveSite = async (url: string) => {
+        try {
+            await RemoveBlockedSite(url);
+            refresh();
+        } catch (err: any) {
+            setError(err.toString());
+        }
+    };
+
+    const handleToggleVPN = async (enabled: boolean) => {
+        try {
+            await SetBlockCommonVPN(enabled);
+            refresh();
+        } catch (err: any) {
+            setError(err.toString());
+        }
+    };
+
     // Called by Keypad "OK"
     const handleRequestStart = (h: number, m: number) => {
         const totalSeconds = (h * 3600) + (m * 60);
@@ -134,10 +162,31 @@ function App() {
             <FocusActive
                 endTime={config.lock_end_time}
                 blockedApps={config.blocked_apps}
+                blockedSites={config.blocked_sites || []}
                 appMap={appMap}
             />
         );
     }
+
+    const handleAddSites = (urls: string[]) => {
+        // @ts-ignore
+        if (window.go.bridge.App && window.go.bridge.App.AddBlockedSites) {
+            // @ts-ignore
+            window.go.bridge.App.AddBlockedSites(urls).then(() => {
+                refresh();
+            });
+        }
+    };
+
+    const handleRemoveSites = (urls: string[]) => {
+        // @ts-ignore
+        if (window.go.bridge.App && window.go.bridge.App.RemoveBlockedSites) {
+            // @ts-ignore
+            window.go.bridge.App.RemoveBlockedSites(urls).then(() => {
+                refresh();
+            });
+        }
+    };
 
     return (
         <AppLayout
@@ -159,6 +208,11 @@ function App() {
             handleSaveApps={handleSaveApps}
             handleRequestStart={handleRequestStart}
             confirmStart={confirmStart}
+            handleAddSite={handleAddSite}
+            handleRemoveSite={handleRemoveSite}
+            handleAddSites={handleAddSites}
+            handleRemoveSites={handleRemoveSites}
+            handleToggleVPN={handleToggleVPN}
         />
     );
 }

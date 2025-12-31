@@ -5,6 +5,14 @@ import {sysinfo} from '../models';
 
 export function AddApp(arg1:string):Promise<void>;
 
+export function AddBlockedSite(arg1:string):Promise<void>;
+
+export function AddBlockedSites(arg1:Array<string>):Promise<void>;
+
+export function GetBlockCommonVPN():Promise<boolean>;
+
+export function GetBlockedSites():Promise<Array<string>>;
+
 export function GetConfig():Promise<storage.Config>;
 
 export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
@@ -12,6 +20,12 @@ export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;
 
 export function RemoveApp(arg1:string):Promise<void>;
+
+export function RemoveBlockedSite(arg1:string):Promise<void>;
+
+export function RemoveBlockedSites(arg1:Array<string>):Promise<void>;
+
+export function SetBlockCommonVPN(arg1:boolean):Promise<void>;
 
 export function SetBlockedApps(arg1:Array<string>):Promise<void>;
 

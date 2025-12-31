@@ -4,10 +4,11 @@ import { sysinfo } from "../../wailsjs/go/models";
 interface FocusActiveProps {
     endTime: string;
     blockedApps: string[];
+    blockedSites: string[];
     appMap: Map<string, sysinfo.AppInfo>;
 }
 
-export function FocusActive({ endTime, blockedApps, appMap }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
 
     useEffect(() => {
@@ -84,6 +85,37 @@ export function FocusActive({ endTime, blockedApps, appMap }: FocusActiveProps) 
                             );
                         })}
                     </div>
+
+                    {/* Blocked Websites Grid */}
+                    {blockedSites && blockedSites.length > 0 && (
+                        <div className="w-full bg-slate-800/50 rounded-2xl border border-slate-700/50 p-8 backdrop-blur-sm">
+                            <h3 className="text-slate-400 text-sm uppercase tracking-widest mb-6 text-center">
+                                Blocked Websites ({blockedSites.length})
+                            </h3>
+
+                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                {blockedSites.map((site) => (
+                                    <div key={site} className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-lg border border-slate-700/50 shadow-sm opacity-75">
+                                        {/* Icon */}
+                                        <div className="w-8 h-8 bg-slate-700 rounded flex items-center justify-center overflow-hidden">
+                                            <img
+                                                src={`https://www.google.com/s2/favicons?domain=${site}&sz=64`}
+                                                alt={site}
+                                                className="w-5 h-5 opacity-70"
+                                                onError={(e) => (e.currentTarget.style.display = 'none')}
+                                            />
+                                        </div>
+
+                                        <div className="flex flex-col overflow-hidden">
+                                            <span className="font-medium text-slate-200 truncate text-sm" title={site}>
+                                                {site}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="text-slate-500 text-sm opacity-60">

@@ -11,6 +11,9 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/windows"
+
+	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/protection"
 )
 
 // Windows API constants and types
@@ -106,13 +109,35 @@ func StartEnforcer(store *storage.Store) {
 
 	debugLog(fmt.Sprintf("Locking for %v (Until monotonic: %v)", remaining, monotonicDeadline))
 
-	// Main Polling Ticker
-	ticker := time.NewTicker(1 * time.Second)
+	// Main Polling Ticker (Aggressive for instant kill)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
-	// Update Loop: Periodically save remaining usage
-	usageTicker := time.NewTicker(20 * time.Second) // Save progress every 20s
-	defer usageTicker.Stop()
+	// Update Loop: Save usage & Anti-Cheat (Deep Check)
+	slowTicker := time.NewTicker(4 * time.Second)
+	defer slowTicker.Stop()
+
+	// 3. INITIAL HOSTS BLOCK
+	blockSites(store)
+	defer hosts.Unblock()
+
+	// Helper to refresh cache
+	refreshCache := func() ([]string, map[string]bool) {
+		store.Load()
+		apps := store.Data.BlockedApps
+		if store.Data.BlockCommonVPN {
+			apps = append(apps, protection.GetVPNExecutables()...)
+		}
+
+		// Build map for O(1) lookup
+		lookup := make(map[string]bool)
+		for _, app := range apps {
+			lookup[strings.ToLower(app)] = true
+		}
+		return apps, lookup
+	}
+
+	cachedBlockedApps, cachedLookup := refreshCache()
 
 	for {
 		select {
@@ -125,32 +150,80 @@ func StartEnforcer(store *storage.Store) {
 				return
 			}
 
-			// Reload store only to check for new BLOCKED APPS
-			// We DO NOT reload time here to avoid race conditions or external edits
-			store.Load()
-			enforce(store.Data.BlockedApps, store)
+			// FAST CHECK (Name only, using Map) every 200ms
+			enforceFast(cachedLookup, store)
 
-		case <-usageTicker.C:
-			// Decrement RemainingDuration based on elapsed monotonic time
+		case <-slowTicker.C:
+			// 1. Decrement Duration (Persist)
 			elapsed := time.Since(monotonicStartTime)
 			newRemaining := initialDuration - elapsed
 			if newRemaining < 0 {
 				newRemaining = 0
 			}
-
-			// Persist progress. If PC crashes, we lose at most 20s.
 			store.Data.RemainingDuration = newRemaining
 			store.Save()
+
+			// 2. Reload Config
+			cachedBlockedApps, cachedLookup = refreshCache()
+
+			// 3. DEEP CHECK (Metadata for renamed apps) & Re-apply Hosts
+			enforceDeep(cachedBlockedApps, store)
+			blockSites(store)
 		}
 	}
 }
 
-func enforce(blockedApps []string, store *storage.Store) {
+func blockSites(store *storage.Store) {
+	sites := store.Data.BlockedSites
+	if store.Data.BlockCommonVPN {
+		sites = append(sites, protection.GetVPNDomains()...)
+	}
+	if len(sites) > 0 {
+		if err := hosts.Block(sites); err != nil {
+			debugLog(fmt.Sprintf("Failed to block sites: %v", err))
+		}
+	}
+}
+
+// enforceFast uses O(1) map lookup for filenames
+func enforceFast(blockedMap map[string]bool, store *storage.Store) {
+	if len(blockedMap) == 0 {
+		return
+	}
+
+	snapshot, err := windows.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return // Silent fail for speed
+	}
+	defer windows.CloseHandle(snapshot)
+
+	var procEntry ProcessEntry32
+	procEntry.Size = uint32(unsafe.Sizeof(procEntry))
+
+	if err := Process32First(snapshot, &procEntry); err != nil {
+		return
+	}
+
+	for {
+		exeName := windows.UTF16ToString(procEntry.ExeFile[:])
+
+		// Check against map (O(1))
+		if blockedMap[strings.ToLower(exeName)] {
+			killProcess(procEntry.ProcessID, exeName, store)
+		}
+
+		if err := Process32Next(snapshot, &procEntry); err != nil {
+			break
+		}
+	}
+}
+
+// enforceDeep uses partial string matching on metadata (Slower)
+func enforceDeep(blockedApps []string, store *storage.Store) {
 	if len(blockedApps) == 0 {
 		return
 	}
 
-	// Create snapshot of running processes
 	snapshot, err := windows.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		debugLog("Snapshot error: " + err.Error())
@@ -161,7 +234,6 @@ func enforce(blockedApps []string, store *storage.Store) {
 	var procEntry ProcessEntry32
 	procEntry.Size = uint32(unsafe.Sizeof(procEntry))
 
-	// Get first process
 	if err := Process32First(snapshot, &procEntry); err != nil {
 		return
 	}
@@ -169,63 +241,34 @@ func enforce(blockedApps []string, store *storage.Store) {
 	for {
 		exeName := windows.UTF16ToString(procEntry.ExeFile[:])
 
-		for _, blocked := range blockedApps {
-			matched := false
+		// We only need to check DEEP if the name itself DOES NOT match.
+		// If name matches, Fast Loop catches it (or we catch it here too, no harm).
+		// But for efficiency, we assume Fast Loop does its job.
 
-			// 1. Check Filename (Fast)
-			if strings.EqualFold(exeName, blocked) {
-				matched = true
-			}
+		// Do we check ALL processes? Yes.
 
-			// 2. Check Metadata (Slow, but secure)
-			// Only check if we haven't matched yet, OR checking everything?
-			// Checking everything is expensive. But we must check if "notepad.exe" is actually "WhatsApp".
-			// Wait, the 'blocked' strings are usually "WhatsApp.exe" or "WhatsApp".
-			// If the user blocked "WhatsApp", we want to kill "renamed_whatsapp.exe".
+		// Metadata check
+		fullPath := getProcessPath(procEntry.ProcessID)
+		if fullPath != "" {
+			prodName, fileDesc := getFileMetadata(fullPath)
+			// Normalize
+			prodName = strings.ToLower(prodName)
+			fileDesc = strings.ToLower(fileDesc)
 
-			// We need the full path to check metadata.
-			// ProcessEntry32 doesn't give full path easily. It takes more work (OpenProcess + GetModuleFileNameEx).
+			for _, blocked := range blockedApps {
+				blockedClean := strings.TrimSuffix(strings.ToLower(blocked), ".exe")
 
-			// Optimization: Only do deep check if we suspect... actually we must periodically scan all if we want to catch renames.
-			// But that is very heavy.
+				if (prodName != "" && strings.Contains(prodName, blockedClean)) ||
+					(fileDesc != "" && strings.Contains(fileDesc, blockedClean)) {
 
-			// Let's try a hybrid:
-			// If simple name match fails, should we check metadata?
-			// The only way to find "renamed_whatsapp.exe" is to check metadata of ALL running processes.
-			// That might spike CPU.
-
-			// Let's assume the user selects "WhatsApp" from the UI. The UI sends "WhatsApp" or "WhatsApp.exe".
-			// We want to match if ProductName == "WhatsApp" or FileDescription == "WhatsApp".
-
-			if !matched {
-				// We need full path.
-				fullPath := getProcessPath(procEntry.ProcessID)
-				if fullPath != "" {
-					prodName, fileDesc := getFileMetadata(fullPath)
-					// Check against blocked strings
-					// If the blocked string is "WhatsApp", we match against "WhatsApp" in prodName/desc.
-					// We should be lenient with substring or exact match?
-					// Usually "WhatsApp" appears as "WhatsApp" EXACTLY in ProductName.
-					// Let's try flexible matching.
-
-					// Often blocked contains .exe, remove it for metadata check
-					blockedClean := strings.TrimSuffix(strings.ToLower(blocked), ".exe")
-
-					if strings.Contains(strings.ToLower(prodName), blockedClean) ||
-						strings.Contains(strings.ToLower(fileDesc), blockedClean) {
-						matched = true
-					}
+					killProcess(procEntry.ProcessID, exeName, store)
+					break // Killed
 				}
-			}
-
-			if matched {
-				killProcess(procEntry.ProcessID, exeName, store)
 			}
 		}
 
-		// Next process
 		if err := Process32Next(snapshot, &procEntry); err != nil {
-			break // Done (ERROR_NO_MORE_FILES usually)
+			break
 		}
 	}
 }

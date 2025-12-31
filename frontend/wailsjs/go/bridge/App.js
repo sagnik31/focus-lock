@@ -6,6 +6,22 @@ export function AddApp(arg1) {
   return window['go']['bridge']['App']['AddApp'](arg1);
 }
 
+export function AddBlockedSite(arg1) {
+  return window['go']['bridge']['App']['AddBlockedSite'](arg1);
+}
+
+export function AddBlockedSites(arg1) {
+  return window['go']['bridge']['App']['AddBlockedSites'](arg1);
+}
+
+export function GetBlockCommonVPN() {
+  return window['go']['bridge']['App']['GetBlockCommonVPN']();
+}
+
+export function GetBlockedSites() {
+  return window['go']['bridge']['App']['GetBlockedSites']();
+}
+
 export function GetConfig() {
   return window['go']['bridge']['App']['GetConfig']();
 }
@@ -20,6 +36,18 @@ export function GetTopBlockedApps() {
 
 export function RemoveApp(arg1) {
   return window['go']['bridge']['App']['RemoveApp'](arg1);
+}
+
+export function RemoveBlockedSite(arg1) {
+  return window['go']['bridge']['App']['RemoveBlockedSite'](arg1);
+}
+
+export function RemoveBlockedSites(arg1) {
+  return window['go']['bridge']['App']['RemoveBlockedSites'](arg1);
+}
+
+export function SetBlockCommonVPN(arg1) {
+  return window['go']['bridge']['App']['SetBlockCommonVPN'](arg1);
 }
 
 export function SetBlockedApps(arg1) {

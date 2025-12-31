@@ -77,6 +77,95 @@ func (a *App) RemoveApp(appName string) error {
 	return a.Store.Save()
 }
 
+// --- Website Blocking Methods ---
+
+func (a *App) GetBlockedSites() []string {
+	a.Store.Load()
+	sort.Strings(a.Store.Data.BlockedSites)
+	return a.Store.Data.BlockedSites
+}
+
+func (a *App) AddBlockedSite(url string) error {
+	a.Store.Load()
+	// Simple duplicate check
+	for _, existing := range a.Store.Data.BlockedSites {
+		if existing == url {
+			return nil
+		}
+	}
+	a.Store.Data.BlockedSites = append(a.Store.Data.BlockedSites, url)
+	sort.Strings(a.Store.Data.BlockedSites)
+	return a.Store.Save()
+}
+
+func (a *App) RemoveBlockedSite(url string) error {
+	a.Store.Load()
+	newSites := []string{}
+	for _, existing := range a.Store.Data.BlockedSites {
+		if existing != url {
+			newSites = append(newSites, existing)
+		}
+	}
+	a.Store.Data.BlockedSites = newSites
+	return a.Store.Save()
+}
+
+func (a *App) AddBlockedSites(urls []string) error {
+	a.Store.Load()
+	existingMap := make(map[string]bool)
+	for _, s := range a.Store.Data.BlockedSites {
+		existingMap[s] = true
+	}
+
+	changed := false
+	for _, url := range urls {
+		if !existingMap[url] {
+			a.Store.Data.BlockedSites = append(a.Store.Data.BlockedSites, url)
+			existingMap[url] = true
+			changed = true
+		}
+	}
+
+	if !changed {
+		return nil
+	}
+	sort.Strings(a.Store.Data.BlockedSites)
+	return a.Store.Save()
+}
+
+func (a *App) RemoveBlockedSites(urls []string) error {
+	a.Store.Load()
+	toRemove := make(map[string]bool)
+	for _, url := range urls {
+		toRemove[url] = true
+	}
+
+	newSites := []string{}
+	for _, existing := range a.Store.Data.BlockedSites {
+		if !toRemove[existing] {
+			newSites = append(newSites, existing)
+		}
+	}
+
+	if len(newSites) == len(a.Store.Data.BlockedSites) {
+		return nil
+	}
+
+	a.Store.Data.BlockedSites = newSites
+	return a.Store.Save()
+}
+
+func (a *App) SetBlockCommonVPN(enabled bool) error {
+	a.Store.Load()
+	a.Store.Data.BlockCommonVPN = enabled
+	return a.Store.Save()
+}
+
+func (a *App) GetBlockCommonVPN() bool {
+	a.Store.Load()
+	return a.Store.Data.BlockCommonVPN
+}
+
 // SetBlockedApps updates the entire list of blocked apps at once.
 func (a *App) SetBlockedApps(apps []string) error {
 	a.Store.Load()

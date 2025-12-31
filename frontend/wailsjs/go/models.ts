@@ -18,6 +18,8 @@ export namespace storage {
 	}
 	export class Config {
 	    blocked_apps: string[];
+	    blocked_sites: string[];
+	    block_common_vpn: boolean;
 	    schedule?: Record<string, string>;
 	    stats: Stats;
 	    // Go type: time
@@ -33,6 +35,8 @@ export namespace storage {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.blocked_apps = source["blocked_apps"];
+	        this.blocked_sites = source["blocked_sites"];
+	        this.block_common_vpn = source["block_common_vpn"];
 	        this.schedule = source["schedule"];
 	        this.stats = this.convertValues(source["stats"], Stats);
 	        this.lock_end_time = this.convertValues(source["lock_end_time"], null);

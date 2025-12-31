@@ -14,6 +14,8 @@ import (
 
 type Config struct {
 	BlockedApps       []string          `json:"blocked_apps"`
+	BlockedSites      []string          `json:"blocked_sites"`
+	BlockCommonVPN    bool              `json:"block_common_vpn"`
 	Schedule          map[string]string `json:"schedule,omitempty"` // "Mon": "09:00-17:00"
 	Stats             Stats             `json:"stats"`
 	LockEndTime       time.Time         `json:"lock_end_time"`      // Zero if not locked
@@ -56,6 +58,8 @@ func NewStore() (*Store, error) {
 			Stats: Stats{
 				KillCounts: make(map[string]int),
 			},
+			BlockedSites:   []string{},
+			BlockCommonVPN: true,
 		},
 		regStore: NewRegistryStore(),
 	}
