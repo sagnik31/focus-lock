@@ -1,23 +1,22 @@
-# Focus Lock 🔒
+# Focus Lock
 
-**Focus Lock** is a high-security, "un-stoppable" application blocker designed for Windows. It is built for users who need absolute focus and want to prevent themselves from forcefully exiting their self-imposed restrictions.
+**Focus Lock** is a high-security application and website blocker designed for Windows. It is engineered for users who require absolute focus and measures to prevent themselves from bypassing self-imposed restrictions.
 
 > [!WARNING]
-> **USE AT YOUR OWN RISK.** This application uses advanced Windows APIs to protect itself from termination. Forcefully killing the process (e.g., via Task Manager or external tools) while a session is active **WILL cause a Blue Screen of Death (BSOD)** and potential data loss.
+> **USE AT YOUR OWN RISK.** This application leverages advanced Windows APIs to protect itself from termination. Forcefully killing the process (e.g., via Task Manager or external tools) while a session is active **WILL cause a Blue Screen of Death (BSOD)** and potential data loss.
 
-## ✨ Key Features
+## Key Features
 
-*   **🛡️ Unstoppable Sessions**: Once a focus session starts, it cannot be cancelled. The application marks itself as a Critical Process (`RtlSetProcessIsCritical`). Termination attempts trigger a system crash (BSOD).
-*   **🌐 Secure Network Timer**: Uses **NTP (Network Time Protocol)** to fetch the exact time from reliable servers (Google, Microsoft). Changing the local system clock will **NOT** bypass the lock.
-*   **🔒 Registry Persistence**: Session state and encryption keys are stored deeply in the **Windows Registry**, making the lock resilient to file deletion or manual tampering.
-*   **👻 Ghost Process**: A background "Ghost" process (with an obfuscated, system-like name) monitors the lock state and enforces blocking, ensuring protection even if the main UI is closed.
-*   **🔎 Smart App Discovery**: Automatically scans for installed programs and Windows Store apps, filtering out system components and helper executables to provide a clean, relevant list of applications to block.
-*   **🚫 Smart Blocking**:
-    *   Blocks applications by **filename** (e.g., `WhatsApp.exe`) and **internal metadata** (Product Name/Description).
-    *   Renaming a blocked executable (e.g., renaming `game.exe` to `notepad.exe`) will not bypass the block.
-*   **⚡ UAC Bypass**: Includes a setup script to create a secure shortcut, allowing you to launch the application without checking "Run as Administrator" every time.
+*   **Unstoppable Sessions**: Once a focus session is initiated, it cannot be cancelled. The application marks itself as a Critical Process (`RtlSetProcessIsCritical`). Any attempt to terminate it triggers a system crash (BSOD).
+*   **Website Blocking**: Blocks access to distracting websites system-wide by modifying the Windows Hosts file. Supports smart subdomain blocking (e.g., `www.`, `m.`, `mobile.`) and works across all browsers including Incognito/Private modes.
+*   **Category Presets**: Includes one-click blocking for common distraction categories: Social Media, Entertainment, Gaming, and Adult content.
+*   **VPN & Evasion Protection**: Automatically detects and blocks common VPN applications and their associated domains to prevent users from bypassing restrictions.
+*   **Secure Network Timer**: Utilizes **NTP (Network Time Protocol)** to synchronize with reliable time servers. Manipulating the local system clock does **not** bypass the lock.
+*   **Ghost Process**: A background "Ghost" process with an obfuscated, system-like name monitors the lock state and enforces restrictions, ensuring protection even if the main UI is closed.
+*   **High-Performance Enforcement**: The enforcement engine uses an O(1) fast-path algorithm to inspect processes every 200ms, ensuring near-instant termination of blocked applications without impacting system performance.
+*   **Smart App Discovery**: Automatically catalogues installed programs, filtering out system components to provide a clean, relevant list of applications for blocking.
 
-## 🛠️ Installation
+## Installation
 
 ### Prerequisites
 *   **Go** (v1.21+)
@@ -36,36 +35,41 @@
     ```
     The binary will be generated in `build/bin/focus-lock.exe`.
 
-## 🚀 Usage Guide
+## Usage Guide
 
-### 1. Initial Setup (Important!)
-For the protection features to work, **Focus Lock must run with Administrator privileges**.
+### 1. Initial Setup
+For the protection features to function correctly, **Focus Lock must run with Administrator privileges**.
 
-To avoid the UAC prompt every time:
+To facilitate this without frequent UAC prompts:
 1.  Navigate to the `scripts` folder.
 2.  Right-click `setup_uac_bypass.ps1` and select **Run with PowerShell**.
-3.  This creates a shortcut named **"Focus Lock"** on your Desktop. Always use this shortcut to launch the app.
+3.  This creates a shortcut named **"Focus Lock"** on your Desktop. Always use this shortcut to launch the application.
 
 ### 2. Blocking Applications
-1.  Launch Focus Lock.
-2.  **Add by Name**: Type the executable name (e.g., `discord.exe`) in the input bar and press Enter.
-3.  **Select from List**: Click the **Menu (☰)** button to view a list of installed applications. Check the boxes for apps you want to block and click "Save".
+1.  Navigate to the **Apps** tab.
+2.  **Add by Name**: Enter the executable name (e.g., `discord.exe`) in the input field and press Enter.
+3.  **Select from List**: Click the **Select All** button or choose individual applications from the list.
 
-### 3. Starting a Session
-1.  Enter the desired duration (Hours, Minutes, Seconds) using the keypad.
-2.  Press **OK**.
-3.  **The session will begin immediately.** The main window will show the countdown.
-    *   *Note: You can close the main window; the "Ghost" process will continue running in the background.*
+### 3. Blocking Websites
+1.  Navigate to the **Websites** tab.
+2.  **Add URL**: Enter the domain (e.g., `facebook.com`) and press Enter.
+3.  **Category Toggles**: Use the toggle switches to block entire categories of websites instantly.
 
-## 🏗️ Technical Details
+### 4. Starting a Session
+1.  Select the desired duration using the time slider or the custom keypad.
+2.  Click **Start Focus**.
+3.  Review the **Confirm Lock** modal, which lists the duration and all blocked items.
+4.  Confirm to begin the session. The enforcement mechanism activates immediately.
+
+## Technical Architecture
 
 *   **Frontend**: React + TypeScript + TailwindCSS
 *   **Backend**: Go (Wails framework)
-*   **Security Mechanisms**:
-    *   **ACL Modification**: Modifies the Discretionary Access Control List (DACL) to deny `PROCESS_TERMINATE` rights to "Everyone".
-    *   **Critical Process**: Marks the process as critical to the OS kernel.
-    *   **Obfuscation**: Copies the executable to a hidden user directory with a random system-sounding name (e.g., `HostServiceManager.exe`) to evade detection.
+*   **Enforcement Mechanisms**:
+    *   **Process Termination**: Uses `CreateToolhelp32Snapshot` and `TerminateProcess` with a dual-loop architecture (Fast Check vs. Deep Metadata Inspection).
+    *   **Network Blocking**: Modifies `C:\Windows\System32\drivers\etc\hosts` to redirect blocked domains to `0.0.0.0`.
+    *   **Critical Status**: Sets the process status to Critical, forcing the OS kernel to panic if the process is killed unexpectedly.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
-This software alters critical system process states. The developers are not responsible for any data loss, system instability, or frustration caused by your inability to play games or check social media. **Focus wisely.**
+This software alters critical system process states. The developers are not responsible for any data loss, system instability, or inconvenience caused by the inability to access blocked applications or websites during an active session. **Focus wisely.**
