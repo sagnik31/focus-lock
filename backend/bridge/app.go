@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
@@ -39,11 +40,49 @@ func NewApp() *App {
 // So yes, Startup (capital S) or just call it Startup.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+
+	// Startup Cleanup / Sanity Check
+	a.Store.Load()
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
+
+	// Check if any schedule is enabled (not just currently active)
+	hasEnabledSchedules := false
+	for _, s := range a.Store.Data.Schedules {
+		if s.Enabled {
+			hasEnabledSchedules = true
+			break
+		}
+	}
+
+	if !manualActive && !scheduleActive && !hasEnabledSchedules {
+		// No active lock and no enabled schedules. Force cleanup.
+		_ = hosts.Unblock()
+		if a.Store.Data.GhostTaskName != "" {
+			_ = scheduler.DisablePersistence(a.Store.Data.GhostTaskName)
+			a.Store.Data.GhostTaskName = ""
+			a.Store.Data.GhostExePath = ""
+			a.Store.Save()
+		}
+	} else if hasEnabledSchedules && a.Store.Data.GhostTaskName == "" {
+		// Enabled schedule(s) exist but no Ghost is set up. Spawn one now.
+		// This ensures enforcement persists even if user closes the UI before schedule activates.
+		currentExe, err := os.Executable()
+		if err == nil {
+			taskName := obfuscation.GenerateTaskName()
+			ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
+			if err == nil {
+				a.Store.Data.GhostTaskName = taskName
+				a.Store.Data.GhostExePath = ghostExe
+				a.Store.Save()
+				_ = scheduler.EnablePersistence(ghostExe, taskName)
+				_ = spawnGhost(ghostExe, taskName)
+			}
+		}
+	}
+
 	// Start the Enforcer in the background of the UI process
-	// This ensures schedules are enforced while the app is open.
-	// For persistence after close, we rely on the Ghost process (if started)
-	// or in future, a dedicated service.
-	go watchdog.StartEnforcer(a.Store)
+	go watchdog.StartEnforcer(a.Store, false)
 }
 
 // --- Exposed Methods ---
@@ -101,6 +140,13 @@ func (a *App) AddBlockedSite(url string) error {
 	}
 	a.Store.Data.BlockedSites = append(a.Store.Data.BlockedSites, url)
 	sort.Strings(a.Store.Data.BlockedSites)
+
+	// Try to update hosts immediately (best effort)
+	// If it fails (User mode), ignore it. Ghost will handle it.
+	if err := hosts.Block(a.Store.Data.BlockedSites); err != nil {
+		fmt.Println("Warning: Failed to block sites immediately (likely Permission Denied):", err)
+	}
+
 	return a.Store.Save()
 }
 
@@ -113,6 +159,12 @@ func (a *App) RemoveBlockedSite(url string) error {
 		}
 	}
 	a.Store.Data.BlockedSites = newSites
+
+	// Try to update hosts immediately (best effort)
+	if err := hosts.Block(a.Store.Data.BlockedSites); err != nil {
+		fmt.Println("Warning: Failed to unblock sites immediately:", err)
+	}
+
 	return a.Store.Save()
 }
 
@@ -136,6 +188,12 @@ func (a *App) AddBlockedSites(urls []string) error {
 		return nil
 	}
 	sort.Strings(a.Store.Data.BlockedSites)
+
+	// Try to update hosts immediately (best effort)
+	if err := hosts.Block(a.Store.Data.BlockedSites); err != nil {
+		fmt.Println("Warning: Failed to block sites immediately:", err)
+	}
+
 	return a.Store.Save()
 }
 
@@ -185,7 +243,36 @@ func (a *App) GetSchedules() []storage.Schedule {
 func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 	a.Store.Load()
 	a.Store.Data.Schedules = schedules
-	return a.Store.Save()
+	if err := a.Store.Save(); err != nil {
+		return err
+	}
+
+	// Check if any schedule is enabled
+	hasEnabledSchedules := false
+	for _, s := range schedules {
+		if s.Enabled {
+			hasEnabledSchedules = true
+			break
+		}
+	}
+
+	// Spawn Ghost if enabled schedules exist but no Ghost is running
+	if hasEnabledSchedules && a.Store.Data.GhostTaskName == "" {
+		currentExe, err := os.Executable()
+		if err == nil {
+			taskName := obfuscation.GenerateTaskName()
+			ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
+			if err == nil {
+				a.Store.Data.GhostTaskName = taskName
+				a.Store.Data.GhostExePath = ghostExe
+				a.Store.Save()
+				_ = scheduler.EnablePersistence(ghostExe, taskName)
+				_ = spawnGhost(ghostExe, taskName)
+			}
+		}
+	}
+
+	return nil
 }
 
 // SetBlockedApps updates the entire list of blocked apps at once.
@@ -198,48 +285,53 @@ func (a *App) SetBlockedApps(apps []string) error {
 
 func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
+
+	var taskName, ghostExe string
+
+	// Check if a Ghost already exists (e.g., from a schedule)
+	if a.Store.Data.GhostTaskName != "" && a.Store.Data.GhostExePath != "" {
+		// Reuse existing Ghost - just update the lock time
+		taskName = a.Store.Data.GhostTaskName
+		ghostExe = a.Store.Data.GhostExePath
+	} else {
+		// 1. Setup Obfuscation (Copy executable first so path is known)
+		currentExe, err := os.Executable()
+		if err != nil {
+			return err
+		}
+
+		taskName = obfuscation.GenerateTaskName() // Returns "FocusLockGhost"
+		ghostExe, err = obfuscation.SetupGhostExecutable(currentExe, taskName)
+		if err != nil {
+			return fmt.Errorf("obfuscation setup failed: %w", err)
+		}
+	}
+
+	// 2. Update ALL config fields BEFORE spawning Ghost
 	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(seconds) * time.Second)
 	a.Store.Data.RemainingDuration = time.Duration(seconds) * time.Second
-	a.Store.Data.EmergencyUnlocksUsed = 0 // Reset usage for new session
-	if err := a.Store.Save(); err != nil {
-		return err
-	}
-
-	// 1. Setup Obfuscation
-	currentExe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-
-	taskName := obfuscation.GenerateTaskName()
-	ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
-	if err != nil {
-		return fmt.Errorf("obfuscation setup failed: %w", err)
-	}
-
-	// 2. Persist dynamic details
+	a.Store.Data.EmergencyUnlocksUsed = 0
 	a.Store.Data.GhostTaskName = taskName
 	a.Store.Data.GhostExePath = ghostExe
-
-	// Increment Blocked Counts & Duration
 	a.Store.UpdateBlockedStats(a.Store.Data.BlockedApps, seconds)
 
+	// **CRITICAL**: Save BEFORE spawning Ghost so it sees the correct LockEndTime
 	if err := a.Store.Save(); err != nil {
 		return err
 	}
 
 	// 3. Enable Persistence (so reboot works)
-	// We ignore error here because we might not have Admin rights in dev mode,
-	// but we still want to try.
 	_ = scheduler.EnablePersistence(ghostExe, taskName)
 
-	// 4. Spawn the Ghost Process immediately
-	if err := spawnGhost(ghostExe); err != nil {
+	// 4. Spawn the Ghost Process immediately (if not already running, schtasks /run is idempotent)
+	if err := spawnGhost(ghostExe, taskName); err != nil {
 		return err
 	}
 
+	// Give it a moment to start
+	time.Sleep(500 * time.Millisecond)
+
 	// 5. App remains open to show "Focus Active" screen
-	// The ghost process handles the actual blocking in the background.
 	return nil
 }
 
@@ -252,8 +344,13 @@ func (a *App) StopFocus() error {
 	taskName := a.Store.Data.GhostTaskName
 	exePath := a.Store.Data.GhostExePath
 
+	// Unblock sites and apps
+	// Ignore errors (User mode)
+	_ = hosts.Unblock()
+
+	// Disable persistence immediately
 	if taskName != "" {
-		scheduler.DisablePersistence(taskName)
+		_ = scheduler.DisablePersistence(taskName)
 	}
 	if exePath != "" {
 		obfuscation.CleanupGhostExecutable(exePath)
@@ -264,7 +361,11 @@ func (a *App) StopFocus() error {
 	a.Store.Data.GhostTaskName = ""
 	a.Store.Data.GhostExePath = ""
 
-	a.Store.Save()
+	hosts.Unblock()
+
+	if err := a.Store.Save(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -332,14 +433,22 @@ func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
 	return result, nil
 }
 
-func spawnGhost(exePath string) error {
-	// We start the same executable with --enforce flag
+func spawnGhost(exePath, taskName string) error {
+	// 1. Try to launch via Scheduled Task (for Admin privileges without UAC)
+	// This only works if the task was created previously (e.g. by installer or Admin setup).
+	// We use "schtasks /run" which doesn't trigger UAC if the task is already set up.
+	if err := exec.Command("schtasks", "/run", "/tn", taskName).Run(); err == nil {
+		fmt.Println("Ghost spawned via Scheduled Task (Admin Mode).")
+		return nil
+	}
+
+	// 2. Fallback: Direct spawn (User Mode)
+	// This won't be able to block websites, but will handle other logic or fail gracefully.
+	fmt.Println("Warning: Failed to run Scheduled Task (falling back to User Mode spawn). Blocking may fail.")
 	cmd := exec.Command(exePath, "--enforce")
-	// Detach process so it survives parent exit
-	// On Windows, Start() handles this reasonably well, but we don't wait for it.
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP, // Detach strictly
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | 0x00000008 | 0x01000000,
 	}
 	return cmd.Start()
 }

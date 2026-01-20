@@ -31,6 +31,12 @@ var popularSites = map[string][]string{
 // It backs up the existing block if possible (not implemented here for simplicity, but good practice).
 func Block(domains []string) error {
 	hostsPath := getHostsPath()
+
+	// Ensure we can write to it (remove ReadOnly if set)
+	if err := ensureWritable(hostsPath); err != nil {
+		return fmt.Errorf("failed to make hosts writable: %w", err)
+	}
+
 	content, err := os.ReadFile(hostsPath)
 	if err != nil {
 		return err
@@ -76,6 +82,12 @@ func Block(domains []string) error {
 // Unblock removes our section from the hosts file.
 func Unblock() error {
 	hostsPath := getHostsPath()
+
+	// Ensure we can write to it
+	if err := ensureWritable(hostsPath); err != nil {
+		return fmt.Errorf("failed to make hosts writable: %w", err)
+	}
+
 	content, err := os.ReadFile(hostsPath)
 	if err != nil {
 		return err
@@ -102,6 +114,19 @@ func Unblock() error {
 
 	finalContent := strings.Join(newLines, "\n")
 	return os.WriteFile(hostsPath, []byte(finalContent), 0644)
+}
+
+func ensureWritable(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	// Check if ReadOnly bit is set
+	if info.Mode().Perm()&0200 == 0 {
+		// Attempt to add Write permission (0644 or just add 0200)
+		return os.Chmod(path, 0644)
+	}
+	return nil
 }
 
 // ExpandDomains takes a list of input domains and returns a comprehensive list including subdomains.

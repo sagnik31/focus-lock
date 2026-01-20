@@ -13,16 +13,9 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
-// GenerateTaskName creates a plausible-sounding Windows system task name
+// GenerateTaskName returns a fixed name for the ghost task to allow persistent Admin setup.
 func GenerateTaskName() string {
-	subsystems := []string{"Windows", "Win32", "Shell", "UserSession", "AppX", "Runtime", "System", "Net", "Host"}
-	components := []string{"Experience", "Telemetry", "Broker", "Cache", "Component", "Host", "Service", "Manager", "Provider"}
-	actions := []string{"Update", "Sync", "Maintenance", "Refresh", "Coordinator", "Handler", "Monitor", "Helper"}
-
-	return fmt.Sprintf("%s%s%s",
-		subsystems[rand.Intn(len(subsystems))],
-		components[rand.Intn(len(components))],
-		actions[rand.Intn(len(actions))])
+	return "FocusLockGhost"
 }
 
 // SetupGhostExecutable duplicates the current executable to a hidden location with a new name

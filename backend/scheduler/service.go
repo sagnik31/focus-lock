@@ -31,12 +31,3 @@ func DisablePersistence(taskName string) error {
 	}
 	return exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
 }
-
-// IsTaskActive checks if the task exists.
-func IsTaskActive(taskName string) bool {
-	if taskName == "" {
-		return false
-	}
-	err := exec.Command("schtasks", "/query", "/tn", taskName).Run()
-	return err == nil
-}

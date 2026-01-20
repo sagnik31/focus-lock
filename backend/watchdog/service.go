@@ -13,6 +13,7 @@ import (
 
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/protection"
+	"focus-lock/backend/scheduler"
 )
 
 // Windows API constants and types
@@ -42,8 +43,8 @@ func debugLog(msg string) {
 	f.WriteString(time.Now().Format(time.RFC3339) + " " + msg + "\n")
 }
 
-// isScheduleActive checks if any enabled schedule matches the current time
-func isScheduleActive(schedules []storage.Schedule) bool {
+// IsScheduleActive checks if any enabled schedule matches the current time
+func IsScheduleActive(schedules []storage.Schedule) bool {
 	now := time.Now()
 	currentDay := now.Format("Mon")    // "Mon", "Tue", ...
 	currentTime := now.Format("15:04") // "HH:MM"
@@ -75,8 +76,8 @@ func isScheduleActive(schedules []storage.Schedule) bool {
 }
 
 // StartEnforcer runs deeply in the background. It monitors the lock time and schedules.
-func StartEnforcer(store *storage.Store) {
-	debugLog("Enforcer Watchdog Started")
+func StartEnforcer(store *storage.Store, isGhost bool) {
+	debugLog(fmt.Sprintf("Enforcer Watchdog Started (Ghost=%v)", isGhost))
 
 	// Main Polling Ticker (Aggressive for coverage)
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -110,7 +111,7 @@ func StartEnforcer(store *storage.Store) {
 	store.Load()
 	if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
 		blockSites(store)
-	} else if isScheduleActive(store.Data.Schedules) {
+	} else if IsScheduleActive(store.Data.Schedules) {
 		blockSites(store)
 	}
 
@@ -133,7 +134,7 @@ func StartEnforcer(store *storage.Store) {
 			// Schedule needs current time, which changes.
 			// However schedule definitions (Schedules list) change rarely.
 			// We use cached store data for schedule definitions until slow tick reloads.
-			scheduleActive := isScheduleActive(store.Data.Schedules)
+			scheduleActive := IsScheduleActive(store.Data.Schedules)
 
 			shouldEnforce := manualActive || scheduleActive
 
@@ -168,7 +169,7 @@ func StartEnforcer(store *storage.Store) {
 			// For Manual Lock, we still respect the monotonic expiration if we were tracking it,
 			// but we simplify here to just check valid LockEndTime.
 
-			scheduleActive := isScheduleActive(store.Data.Schedules)
+			scheduleActive := IsScheduleActive(store.Data.Schedules)
 			shouldEnforce := manualActive || scheduleActive
 
 			// 3. Check Pause
@@ -181,7 +182,7 @@ func StartEnforcer(store *storage.Store) {
 			if shouldEnforce {
 				// 4. Update Remaining Duration (Only for Manual Lock)
 				if manualActive {
-					updatedRemaining := store.Data.LockEndTime.Sub(time.Now())
+					updatedRemaining := time.Until(store.Data.LockEndTime)
 					if updatedRemaining < 0 {
 						updatedRemaining = 0
 					}
@@ -197,16 +198,38 @@ func StartEnforcer(store *storage.Store) {
 				blockSites(store)
 			} else {
 				// Not enforcing. Ensure Unblock.
-				// Only unblock if we haven't already?
-				// hosts.Unblock() is cheap enough (checks if file is modified).
 				hosts.Unblock()
 
 				// Cleanup expired manual lock
 				if !store.Data.LockEndTime.IsZero() && time.Now().After(store.Data.LockEndTime) {
-					// Clear the lock
 					store.Data.LockEndTime = time.Time{}
 					store.Data.RemainingDuration = 0
 					store.Save()
+				}
+
+				// If we are the Ghost process, check if we should exit.
+				// Only exit if there's NO manual lock AND NO enabled schedules at all.
+				// (If schedules exist, we stay alive to enforce them when they become active)
+				if isGhost {
+					hasEnabledSchedules := false
+					for _, s := range store.Data.Schedules {
+						if s.Enabled {
+							hasEnabledSchedules = true
+							break
+						}
+					}
+
+					manualLockPresent := !store.Data.LockEndTime.IsZero()
+
+					if !manualLockPresent && !hasEnabledSchedules {
+						debugLog("Nothing to enforce and no schedules. Ghost process exiting.")
+						if store.Data.GhostTaskName != "" {
+							scheduler.DisablePersistence(store.Data.GhostTaskName)
+						}
+						protection.SetCritical(false)
+						os.Exit(0)
+					}
+					// Otherwise, Ghost stays alive waiting for next schedule window
 				}
 			}
 		}

@@ -8,6 +8,7 @@ import (
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
 	"os"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -36,6 +37,23 @@ func main() {
 			return
 		}
 
+		// Ensure only one Ghost runs (Single Instance)
+		// This prevents zombie processes from piling up if the UI crashes/restarts
+		mutexName, _ := windows.UTF16PtrFromString("Global\\FocusLockGhost")
+		handle, err := windows.CreateMutex(nil, true, mutexName)
+		if err == nil && windows.GetLastError() == windows.ERROR_ALREADY_EXISTS {
+			// Another ghost is active. We can safely exit.
+			// The existing ghost will pick up the new config.
+			return
+		}
+		_ = handle // Leak the handle so it stays held until process exit
+
+		// DEBUG LOG: Confirm startup
+		configDir, _ := os.UserConfigDir()
+		f, _ := os.OpenFile(configDir+"\\FocusLock\\ghost_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		f.WriteString(fmt.Sprintf("Ghost started at %s with PID %d\n", time.Now().Format(time.RFC3339), os.Getpid()))
+		f.Close()
+
 		// Enable Critical Process Status (BSOD if killed)
 		if err := protection.SetCritical(true); err != nil {
 			fmt.Printf("Failed to set critical status: %v\n", err)
@@ -48,7 +66,7 @@ func main() {
 		}
 
 		store.Load()
-		watchdog.StartEnforcer(store)
+		watchdog.StartEnforcer(store, true)
 		return
 	}
 
