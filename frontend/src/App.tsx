@@ -209,6 +209,7 @@ function App() {
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
                 pausedUntil={config.paused_until}
+                emergencyUnlocksUsed={config.emergency_unlocks_used}
                 isSchedule={!!activeScheduleEndTime && !(config.lock_end_time && new Date(config.lock_end_time) > new Date())}
             />
         );

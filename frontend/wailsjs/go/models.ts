@@ -51,6 +51,7 @@ export namespace storage {
 	    ghost_exe_path: string;
 	    // Go type: time
 	    paused_until: any;
+	    emergency_unlocks_used: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -68,6 +69,7 @@ export namespace storage {
 	        this.ghost_task_name = source["ghost_task_name"];
 	        this.ghost_exe_path = source["ghost_exe_path"];
 	        this.paused_until = this.convertValues(source["paused_until"], null);
+	        this.emergency_unlocks_used = source["emergency_unlocks_used"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

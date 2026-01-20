@@ -10,9 +10,10 @@ interface FocusActiveProps {
     blockedSites: string[];
     appMap: Map<string, sysinfo.AppInfo>;
     isSchedule?: boolean;
+    emergencyUnlocksUsed: number;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
@@ -100,17 +101,25 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                             <p className="text-slate-400 text-lg">remaining</p>
 
                             {/* Emergency Unlock Button */}
-                            <div className="pt-8">
+                            {/* Emergency Unlock Button */}
+                            <div className="pt-8 text-center space-y-2">
                                 <button
                                     onClick={handleEmergencyUnlock}
-                                    className="px-6 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 transition-all text-sm font-medium hover:scale-105 active:scale-95 flex items-center gap-2 mx-auto"
-                                    title="Unlocks apps for 2 minutes"
+                                    disabled={emergencyUnlocksUsed >= 2}
+                                    className={`px-6 py-2 rounded-lg transition-all text-sm font-medium flex items-center gap-2 mx-auto ${emergencyUnlocksUsed >= 2
+                                            ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-700'
+                                            : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:scale-105 active:scale-95'
+                                        }`}
+                                    title={emergencyUnlocksUsed >= 2 ? "Emergency unlock limit reached" : "Unlocks apps for 1 minute"}
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                     </svg>
-                                    Emergency Unlock (2m)
+                                    Emergency Unlock (1m) • {Math.max(0, 2 - emergencyUnlocksUsed)} left
                                 </button>
+                                {emergencyUnlocksUsed >= 2 && (
+                                    <p className="text-xs text-slate-500">Session limit reached</p>
+                                )}
                             </div>
                         </>
                     )}

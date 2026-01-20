@@ -13,16 +13,17 @@ import (
 )
 
 type Config struct {
-	BlockedApps       []string      `json:"blocked_apps"`
-	BlockedSites      []string      `json:"blocked_sites"`
-	BlockCommonVPN    bool          `json:"block_common_vpn"`
-	Schedules         []Schedule    `json:"schedules"` // New schedule structure
-	Stats             Stats         `json:"stats"`
-	LockEndTime       time.Time     `json:"lock_end_time"`      // Zero if not locked
-	RemainingDuration time.Duration `json:"remaining_duration"` // For offline usage tracking
-	GhostTaskName     string        `json:"ghost_task_name"`    // Obfuscated task name
-	GhostExePath      string        `json:"ghost_exe_path"`     // Path to obfuscated executable
-	PausedUntil       time.Time     `json:"paused_until"`       // Emergency unlock expiry
+	BlockedApps          []string      `json:"blocked_apps"`
+	BlockedSites         []string      `json:"blocked_sites"`
+	BlockCommonVPN       bool          `json:"block_common_vpn"`
+	Schedules            []Schedule    `json:"schedules"` // New schedule structure
+	Stats                Stats         `json:"stats"`
+	LockEndTime          time.Time     `json:"lock_end_time"`      // Zero if not locked
+	RemainingDuration    time.Duration `json:"remaining_duration"` // For offline usage tracking
+	GhostTaskName        string        `json:"ghost_task_name"`    // Obfuscated task name
+	GhostExePath         string        `json:"ghost_exe_path"`     // Path to obfuscated executable
+	PausedUntil          time.Time     `json:"paused_until"`       // Emergency unlock expiry
+	EmergencyUnlocksUsed int           `json:"emergency_unlocks_used"`
 }
 
 // Schedule represents a weekly time window for automatic locking

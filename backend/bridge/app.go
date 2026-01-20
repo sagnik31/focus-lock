@@ -200,6 +200,7 @@ func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
 	a.Store.Data.LockEndTime = time.Now().Add(time.Duration(seconds) * time.Second)
 	a.Store.Data.RemainingDuration = time.Duration(seconds) * time.Second
+	a.Store.Data.EmergencyUnlocksUsed = 0 // Reset usage for new session
 	if err := a.Store.Save(); err != nil {
 		return err
 	}
@@ -269,7 +270,14 @@ func (a *App) StopFocus() error {
 
 func (a *App) EmergencyUnlock() error {
 	a.Store.Load()
-	a.Store.Data.PausedUntil = time.Now().Add(2 * time.Minute)
+
+	if a.Store.Data.EmergencyUnlocksUsed >= 2 {
+		return fmt.Errorf("emergency unlock limit reached (2/2)")
+	}
+
+	a.Store.Data.PausedUntil = time.Now().Add(1 * time.Minute)
+	a.Store.Data.EmergencyUnlocksUsed++
+
 	return a.Store.Save()
 }
 
