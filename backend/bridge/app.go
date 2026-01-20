@@ -340,28 +340,38 @@ func (a *App) StopFocus() error {
 	// For V1 debug, we allow manual stop.
 	a.Store.Load()
 
-	// Cleanup Obfuscation
-	taskName := a.Store.Data.GhostTaskName
-	exePath := a.Store.Data.GhostExePath
+	// Check if any schedule is enabled - we'll preserve Ghost if so
+	hasEnabledSchedules := false
+	for _, s := range a.Store.Data.Schedules {
+		if s.Enabled {
+			hasEnabledSchedules = true
+			break
+		}
+	}
 
-	// Unblock sites and apps
-	// Ignore errors (User mode)
+	// Unblock sites (only for manual lock end, schedules will re-block)
 	_ = hosts.Unblock()
 
-	// Disable persistence immediately
-	if taskName != "" {
-		_ = scheduler.DisablePersistence(taskName)
-	}
-	if exePath != "" {
-		obfuscation.CleanupGhostExecutable(exePath)
-	}
+	// Only cleanup Ghost if NO enabled schedules exist
+	// This preserves the scheduled task for future schedule activations
+	if !hasEnabledSchedules {
+		taskName := a.Store.Data.GhostTaskName
+		exePath := a.Store.Data.GhostExePath
 
-	a.Store.Data.LockEndTime = time.Time{} // Reset
+		if taskName != "" {
+			_ = scheduler.DisablePersistence(taskName)
+		}
+		if exePath != "" {
+			obfuscation.CleanupGhostExecutable(exePath)
+		}
+
+		a.Store.Data.GhostTaskName = ""
+		a.Store.Data.GhostExePath = ""
+	}
+	// If schedules exist, keep GhostTaskName and GhostExePath so Ghost continues running
+
+	a.Store.Data.LockEndTime = time.Time{} // Reset manual lock
 	a.Store.Data.RemainingDuration = 0
-	a.Store.Data.GhostTaskName = ""
-	a.Store.Data.GhostExePath = ""
-
-	hosts.Unblock()
 
 	if err := a.Store.Save(); err != nil {
 		return err

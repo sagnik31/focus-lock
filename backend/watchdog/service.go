@@ -13,7 +13,6 @@ import (
 
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/protection"
-	"focus-lock/backend/scheduler"
 )
 
 // Windows API constants and types
@@ -223,9 +222,9 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 
 					if !manualLockPresent && !hasEnabledSchedules {
 						debugLog("Nothing to enforce and no schedules. Ghost process exiting.")
-						if store.Data.GhostTaskName != "" {
-							scheduler.DisablePersistence(store.Data.GhostTaskName)
-						}
+						// NOTE: We intentionally do NOT delete the scheduled task here.
+						// The task should persist so that future manual/scheduled sessions
+						// work without re-running the admin setup script.
 						protection.SetCritical(false)
 						os.Exit(0)
 					}
