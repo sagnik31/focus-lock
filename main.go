@@ -12,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"golang.org/x/sys/windows"
 )
 
 //go:embed all:frontend/dist
@@ -25,7 +26,9 @@ func main() {
 		// We initiate it but don't crash if it fails (e.g. dev environment restrictions)
 	}
 
-	// 1. Check for "--enforce" flag
+	// 1. Check for "--enforce" flag (Ghost Mode)
+	// We check this FIRST because the Ghost process runs in the background and
+	// should not be blocked by the single-instance mutex of the UI.
 	if len(os.Args) > 1 && os.Args[1] == "--enforce" {
 		// Headless Mode
 		store, err := storage.NewStore()
@@ -37,14 +40,39 @@ func main() {
 		if err := protection.SetCritical(true); err != nil {
 			fmt.Printf("Failed to set critical status: %v\n", err)
 		} else {
-			// Ensure we disable it if we exit gracefully
-			defer protection.SetCritical(false)
+			// CRITICAL: Ensure we disable it if we exit gracefully
+			// This prevents BSOD when the valid timer expires and we exit.
+			defer func() {
+				protection.SetCritical(false)
+			}()
 		}
 
 		store.Load()
 		watchdog.StartEnforcer(store)
 		return
 	}
+
+	// 2. Single Instance Lock (UI Mode Only)
+	// We use a named mutex to ensure only one instance of the UI runs.
+	mutexName, _ := windows.UTF16PtrFromString("Global\\FocusLockMutex")
+	handle, err := windows.CreateMutex(nil, true, mutexName)
+	if err != nil {
+		// If error (access denied etc), we just continue, but...
+		// If ERROR_ALREADY_EXISTS, it means another instance holds it.
+	}
+	// Check if it already existed
+	if ferr := windows.GetLastError(); ferr == windows.ERROR_ALREADY_EXISTS {
+		// Another instance is running.
+		// If we are just launching UI, we might want to bring it to front (TODO).
+		// For now, we silently exit to prevent "Multiple Windows" or config corruption.
+		// Important: Close handle if we are exiting
+		if handle != 0 {
+			windows.CloseHandle(handle)
+		}
+		return
+	}
+	// Keep handle open until process exits
+	// defer windows.CloseHandle(handle) // implied on exit
 
 	if len(os.Args) > 1 && os.Args[1] == "--test-spawn" {
 		app := bridge.NewApp()
@@ -54,15 +82,13 @@ func main() {
 		} else {
 			fmt.Println("Focus started successfully. Check for hidden process.")
 		}
-		// Sleep briefly to allow spawn to authenticate/detach if needed
-		// time.Sleep(2 * time.Second)
 		return
 	}
 
 	// 2. UI Mode
 	app := bridge.NewApp()
 
-	err := wails.Run(&options.App{
+	err = wails.Run(&options.App{
 		Title:  "Focus Lock",
 		Width:  1024,
 		Height: 768,

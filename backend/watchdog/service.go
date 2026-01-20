@@ -122,8 +122,10 @@ func StartEnforcer(store *storage.Store) {
 	defer hosts.Unblock()
 
 	// Helper to refresh cache
-	refreshCache := func() ([]string, map[string]bool) {
-		store.Load()
+	refreshCache := func() ([]string, map[string]bool, error) {
+		if err := store.Load(); err != nil {
+			return nil, nil, err
+		}
 		apps := store.Data.BlockedApps
 		if store.Data.BlockCommonVPN {
 			apps = append(apps, protection.GetVPNExecutables()...)
@@ -134,10 +136,10 @@ func StartEnforcer(store *storage.Store) {
 		for _, app := range apps {
 			lookup[strings.ToLower(app)] = true
 		}
-		return apps, lookup
+		return apps, lookup, nil
 	}
 
-	cachedBlockedApps, cachedLookup := refreshCache()
+	cachedBlockedApps, cachedLookup, _ := refreshCache()
 
 	for {
 		select {
@@ -150,21 +152,49 @@ func StartEnforcer(store *storage.Store) {
 				return
 			}
 
+			// CHECK PAUSE (Fast)
+			// Accessed sequentially in single goroutine, so safe after refreshCache update
+			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+				continue
+			}
+
 			// FAST CHECK (Name only, using Map) every 200ms
 			enforceFast(cachedLookup, store)
 
 		case <-slowTicker.C:
-			// 1. Decrement Duration (Persist)
+			// 2. Decrement Duration (Atomic Update)
+			// We use UpdateAtomic to ensure we don't overwrite "PausedUntil" if the UI updated it
+			// while we were sleeping.
 			elapsed := time.Since(monotonicStartTime)
 			newRemaining := initialDuration - elapsed
 			if newRemaining < 0 {
 				newRemaining = 0
 			}
-			store.Data.RemainingDuration = newRemaining
-			store.Save()
 
-			// 2. Reload Config
-			cachedBlockedApps, cachedLookup = refreshCache()
+			err := store.UpdateAtomic(func(cfg *storage.Config) {
+				cfg.RemainingDuration = newRemaining
+			})
+			if err != nil {
+				debugLog("Failed to update remaining duration: " + err.Error())
+				// Continue anyway, we'll try again next tick
+			}
+
+			// 1. Reload Config for local usage (Apps/Sites)
+			// refreshCache calls Load(), which gets the latest state including any PausedUntil
+			newApps, newLookup, err := refreshCache()
+			if err != nil {
+				debugLog("Config reload failed: " + err.Error())
+				// We still enforce with old cache if possible
+			} else {
+				cachedBlockedApps, cachedLookup = newApps, newLookup
+			}
+
+			// CHECK PAUSE (Slow/Deep)
+			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+				debugLog("Emergency Unlocked (Paused). Unblocking hosts temporarily.")
+				hosts.Unblock()
+				continue
+			}
 
 			// 3. DEEP CHECK (Metadata for renamed apps) & Re-apply Hosts
 			enforceDeep(cachedBlockedApps, store)
@@ -209,6 +239,13 @@ func enforceFast(blockedMap map[string]bool, store *storage.Store) {
 
 		// Check against map (O(1))
 		if blockedMap[strings.ToLower(exeName)] {
+			// CRITICAL FIX: Reload Config BEFORE killing to check for Emergency Unlock
+			// This prevents race condition where we overwrite the pause command with old data.
+			store.Load()
+			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+				return // Stop enforcing if paused
+			}
+
 			killProcess(procEntry.ProcessID, exeName, store)
 		}
 

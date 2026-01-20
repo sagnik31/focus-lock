@@ -9,6 +9,8 @@ export function AddBlockedSite(arg1:string):Promise<void>;
 
 export function AddBlockedSites(arg1:Array<string>):Promise<void>;
 
+export function EmergencyUnlock():Promise<void>;
+
 export function GetBlockCommonVPN():Promise<boolean>;
 
 export function GetBlockedSites():Promise<Array<string>>;

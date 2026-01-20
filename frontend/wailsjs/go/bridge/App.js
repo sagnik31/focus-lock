@@ -14,6 +14,10 @@ export function AddBlockedSites(arg1) {
   return window['go']['bridge']['App']['AddBlockedSites'](arg1);
 }
 
+export function EmergencyUnlock() {
+  return window['go']['bridge']['App']['EmergencyUnlock']();
+}
+
 export function GetBlockCommonVPN() {
   return window['go']['bridge']['App']['GetBlockCommonVPN']();
 }

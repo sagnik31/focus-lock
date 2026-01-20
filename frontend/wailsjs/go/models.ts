@@ -27,6 +27,8 @@ export namespace storage {
 	    remaining_duration: number;
 	    ghost_task_name: string;
 	    ghost_exe_path: string;
+	    // Go type: time
+	    paused_until: any;
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -43,6 +45,7 @@ export namespace storage {
 	        this.remaining_duration = source["remaining_duration"];
 	        this.ghost_task_name = source["ghost_task_name"];
 	        this.ghost_exe_path = source["ghost_exe_path"];
+	        this.paused_until = this.convertValues(source["paused_until"], null);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

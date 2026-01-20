@@ -245,6 +245,12 @@ func (a *App) StopFocus() error {
 	return nil
 }
 
+func (a *App) EmergencyUnlock() error {
+	a.Store.Load()
+	a.Store.Data.PausedUntil = time.Now().Add(2 * time.Minute)
+	return a.Store.Save()
+}
+
 func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
 	// a.Store.Load() // Not needed if we use safe getter, but good for refresh
 	durationMap := a.Store.GetBlockedDuration()

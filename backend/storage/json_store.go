@@ -22,6 +22,7 @@ type Config struct {
 	RemainingDuration time.Duration     `json:"remaining_duration"` // For offline usage tracking
 	GhostTaskName     string            `json:"ghost_task_name"`    // Obfuscated task name
 	GhostExePath      string            `json:"ghost_exe_path"`     // Path to obfuscated executable
+	PausedUntil       time.Time         `json:"paused_until"`       // Emergency unlock expiry
 }
 
 type Stats struct {
@@ -80,8 +81,25 @@ func (s *Store) Load() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// 1. Try to load File
-	data, err := os.ReadFile(s.filePath)
+	return s.loadInternal()
+}
+
+// loadInternal is the actual load logic, assuming lock is held
+func (s *Store) loadInternal() error {
+	// Retry logic for file contention
+	var data []byte
+	var err error
+	maxRetries := 3
+
+	for i := 0; i < maxRetries; i++ {
+		data, err = os.ReadFile(s.filePath)
+		if err == nil {
+			break
+		}
+		// If permission denied or locked, wait and retry
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	fileMissing := os.IsNotExist(err)
 	corrupt := false
 
@@ -94,11 +112,11 @@ func (s *Store) Load() error {
 			stored := string(sigData)
 			if computed != stored {
 				corrupt = true
-				fmt.Println("Config TAMPERED: Signature mismatch")
+				// fmt.Println("Config TAMPERED: Signature mismatch") // Silence to prevent console window
 			}
 		} else {
 			corrupt = true // Missing signature counts as tamper
-			fmt.Println("Config TAMPERED: Missing signature")
+			// fmt.Println("Config TAMPERED: Missing signature") // Silence
 		}
 
 		if !corrupt {
@@ -111,19 +129,25 @@ func (s *Store) Load() error {
 	// 3. Redundancy / Restore Logic
 	// If file is missing OR corrupt, check Registry
 	if fileMissing || corrupt {
-		lockEnd, remDur, regErr := s.regStore.LoadBackup()
+		lockEnd, remDur, pausedUntil, regErr := s.regStore.LoadBackup()
 		if regErr == nil {
 			now := time.Now()
 			// If Registry has an active lock
-			if lockEnd.After(now) || remDur > 0 {
-				fmt.Println("Restoring Config from Registry Backup...")
+			if lockEnd.After(now) || remDur > 0 || (!pausedUntil.IsZero() && pausedUntil.After(now)) {
+				// fmt.Println("Restoring Config from Registry Backup...") // Silence
 				s.Data.LockEndTime = lockEnd
 				s.Data.RemainingDuration = remDur
+				s.Data.PausedUntil = pausedUntil
 				// Force Save to restore the file
-				// We need to unlock first because Save locks
-				s.mu.Unlock()
-				s.Save()
-				s.mu.Lock()
+				// We need to unlock first because Save locks - BUT we are in internal load?
+				// Actually Save() locks, so we cannot call it from here if we hold lock.
+				// We should save AFTER returning from load if needed, or implement saveInternal.
+				// For now, let's just populate Data and let the caller handle save if appropriate,
+				// OR better, we trust the registry data and subsequent saves will write it.
+				// However, the original code did: s.mu.Unlock(); s.Save(); s.mu.Lock();
+				// This is dangerous if loadInternal is called from UpdateAtomic.
+				// CORRECT FIX: Do NOT save here. Just load into memory.
+				// The next Save() call will persist it to disk.
 				return nil
 			}
 		}
@@ -138,10 +162,31 @@ func (s *Store) Load() error {
 	return nil
 }
 
-func (s *Store) Save() error {
+// UpdateAtomic provides a thread-safe way to read-modify-write the config.
+// It ensures that we are modifying the most recent version of the config
+// and avoids race conditions where the UI updates the config while the
+// watchdog is calculating time.
+func (s *Store) UpdateAtomic(updater func(*Config)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// 1. Load latest state from disk (ignore error to allow defaults/recovery)
+	_ = s.loadInternal()
+
+	// 2. Apply modifications
+	updater(&s.Data)
+
+	// 3. Save directly (we already hold lock)
+	return s.saveInternal()
+}
+
+func (s *Store) Save() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveInternal()
+}
+
+func (s *Store) saveInternal() error {
 	data, err := json.MarshalIndent(s.Data, "", "  ")
 	if err != nil {
 		return err
@@ -159,7 +204,7 @@ func (s *Store) Save() error {
 	}
 
 	// 3. Save to Registry (Redundancy)
-	return s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration)
+	return s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration, s.Data.PausedUntil)
 }
 
 func (s *Store) computeHMAC(data []byte) string {

@@ -164,6 +164,7 @@ function App() {
                 blockedApps={config.blocked_apps}
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
+                pausedUntil={config.paused_until}
             />
         );
     }

@@ -14,6 +14,7 @@ const (
 	keySecret    = "SecretKey"
 	keyLockEnd   = "LockEndTime"
 	keyRemDur    = "RemainingDuration"
+	keyPausedUse = "PausedUntil"
 )
 
 // RegistryStore handles backup storage in Windows Registry
@@ -59,7 +60,7 @@ func (r *RegistryStore) GetOrCreateSecret() ([]byte, error) {
 }
 
 // SaveBackup persists critical state to Registry
-func (r *RegistryStore) SaveBackup(lockEnd time.Time, remaining time.Duration) error {
+func (r *RegistryStore) SaveBackup(lockEnd time.Time, remaining time.Duration, pausedUntil time.Time) error {
 	k, _, err := r.createKey()
 	if err != nil {
 		return err
@@ -70,25 +71,38 @@ func (r *RegistryStore) SaveBackup(lockEnd time.Time, remaining time.Duration) e
 	if err := k.SetQWordValue(keyLockEnd, uint64(lockEnd.Unix())); err != nil {
 		return err
 	}
-	return k.SetQWordValue(keyRemDur, uint64(remaining))
+	if err := k.SetQWordValue(keyRemDur, uint64(remaining)); err != nil {
+		return err
+	}
+	// Store PausedUntil
+	if !pausedUntil.IsZero() {
+		return k.SetQWordValue(keyPausedUse, uint64(pausedUntil.Unix()))
+	} else {
+		// If zero, delete the value or set to 0. Deleting is cleaner but Set 0 is easier.
+		return k.SetQWordValue(keyPausedUse, 0)
+	}
 }
 
 // LoadBackup retrieves state from Registry
-func (r *RegistryStore) LoadBackup() (time.Time, time.Duration, error) {
+func (r *RegistryStore) LoadBackup() (time.Time, time.Duration, time.Time, error) {
 	k, err := r.openKey(registry.QUERY_VALUE)
 	if err != nil {
-		return time.Time{}, 0, err
+		return time.Time{}, 0, time.Time{}, err
 	}
 	defer k.Close()
 
 	lockEndUnix, _, err := k.GetIntegerValue(keyLockEnd)
 	if err != nil {
-		return time.Time{}, 0, err
+		return time.Time{}, 0, time.Time{}, err
 	}
 	remDur, _, err := k.GetIntegerValue(keyRemDur)
 	if err != nil {
 		// Tolerable, might default to 0
 		remDur = 0
+	}
+	pausedUnix, _, err := k.GetIntegerValue(keyPausedUse)
+	if err != nil {
+		pausedUnix = 0
 	}
 
 	// 0 means no lock usually, but Unix(0) is 1970.
@@ -104,5 +118,10 @@ func (r *RegistryStore) LoadBackup() (time.Time, time.Duration, error) {
 		t = time.Unix(int64(lockEndUnix), 0)
 	}
 
-	return t, time.Duration(remDur), nil
+	var pausedT time.Time
+	if pausedUnix > 0 {
+		pausedT = time.Unix(int64(pausedUnix), 0)
+	}
+
+	return t, time.Duration(remDur), pausedT, nil
 }
