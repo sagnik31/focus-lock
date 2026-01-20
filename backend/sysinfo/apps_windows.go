@@ -122,9 +122,6 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 	}
 }
 
-// scanAppPaths is removed as per user request to match "Installed Apps" list.
-// func scanAppPaths(apps map[string]AppInfo) { ... }
-
 func scanStoreApps(apps map[string]AppInfo) {
 	// Accessing HKCU Store apps registry
 	k, err := registry.OpenKey(registry.CURRENT_USER, storeAppsKey, registry.READ)

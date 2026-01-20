@@ -3,15 +3,9 @@ package obfuscation
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // GenerateTaskName returns a fixed name for the ghost task to allow persistent Admin setup.
 func GenerateTaskName() string {
