@@ -9,9 +9,10 @@ interface FocusActiveProps {
     blockedApps: string[];
     blockedSites: string[];
     appMap: Map<string, sysinfo.AppInfo>;
+    isSchedule?: boolean;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
@@ -82,8 +83,8 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                         </>
                     ) : (
                         <>
-                            <div className="inline-block px-4 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold tracking-wider text-sm uppercase">
-                                Focus Mode Active
+                            <div className={`inline-block px-4 py-1.5 rounded-full border font-semibold tracking-wider text-sm uppercase ${isSchedule ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                                {isSchedule ? 'Scheduled Session Active' : 'Focus Mode Active'}
                             </div>
 
                             <div className="flex items-baseline justify-center gap-3 text-6xl md:text-7xl font-bold text-white drop-shadow-xl">

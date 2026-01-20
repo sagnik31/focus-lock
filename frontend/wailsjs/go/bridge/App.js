@@ -34,6 +34,10 @@ export function GetInstalledApps() {
   return window['go']['bridge']['App']['GetInstalledApps']();
 }
 
+export function GetSchedules() {
+  return window['go']['bridge']['App']['GetSchedules']();
+}
+
 export function GetTopBlockedApps() {
   return window['go']['bridge']['App']['GetTopBlockedApps']();
 }
@@ -48,6 +52,10 @@ export function RemoveBlockedSite(arg1) {
 
 export function RemoveBlockedSites(arg1) {
   return window['go']['bridge']['App']['RemoveBlockedSites'](arg1);
+}
+
+export function SaveSchedules(arg1) {
+  return window['go']['bridge']['App']['SaveSchedules'](arg1);
 }
 
 export function SetBlockCommonVPN(arg1) {

@@ -16,11 +16,33 @@ export namespace storage {
 	        this.blocked_duration = source["blocked_duration"];
 	    }
 	}
+	export class Schedule {
+	    id: string;
+	    name: string;
+	    days: string[];
+	    start_time: string;
+	    end_time: string;
+	    enabled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Schedule(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.days = source["days"];
+	        this.start_time = source["start_time"];
+	        this.end_time = source["end_time"];
+	        this.enabled = source["enabled"];
+	    }
+	}
 	export class Config {
 	    blocked_apps: string[];
 	    blocked_sites: string[];
 	    block_common_vpn: boolean;
-	    schedule?: Record<string, string>;
+	    schedules: Schedule[];
 	    stats: Stats;
 	    // Go type: time
 	    lock_end_time: any;
@@ -39,7 +61,7 @@ export namespace storage {
 	        this.blocked_apps = source["blocked_apps"];
 	        this.blocked_sites = source["blocked_sites"];
 	        this.block_common_vpn = source["block_common_vpn"];
-	        this.schedule = source["schedule"];
+	        this.schedules = this.convertValues(source["schedules"], Schedule);
 	        this.stats = this.convertValues(source["stats"], Stats);
 	        this.lock_end_time = this.convertValues(source["lock_end_time"], null);
 	        this.remaining_duration = source["remaining_duration"];
@@ -66,6 +88,7 @@ export namespace storage {
 		    return a;
 		}
 	}
+	
 
 }
 

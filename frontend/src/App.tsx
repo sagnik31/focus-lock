@@ -51,11 +51,38 @@ function App() {
         return map;
     }, [installedApps]);
 
+    // Helper to check active schedule
+    const getActiveScheduleEndTime = (schedules: storage.Schedule[] | undefined): Date | null => {
+        if (!schedules) return null;
+
+        const now = new Date();
+        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const currentDay = days[now.getDay()];
+        const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // "HH:MM" 24h
+
+        for (const s of schedules) {
+            if (!s.enabled) continue;
+            if (!s.days.includes(currentDay)) continue;
+
+            // Check Time Range (Same-day logic matches backend)
+            if (currentTime >= s.start_time && currentTime < s.end_time) {
+                // Parse End Time to Date
+                const [h, m] = s.end_time.split(':').map(Number);
+                const endDate = new Date();
+                endDate.setHours(h, m, 0, 0);
+                return endDate;
+            }
+        }
+        return null;
+    };
+
     // Derived State
+    const activeScheduleEndTime = useMemo(() => getActiveScheduleEndTime(config?.schedules), [config, new Date().getMinutes()]); // Re-eval on minute change? Effect loop handles refresh.
+
     const isLocked = useMemo(() => {
-        if (!config?.lock_end_time) return false;
-        return new Date(config.lock_end_time) > new Date();
-    }, [config]);
+        const manualLock = config?.lock_end_time && new Date(config.lock_end_time) > new Date();
+        return manualLock || !!activeScheduleEndTime;
+    }, [config, activeScheduleEndTime]);
 
     const handleAdd = async () => {
         if (!newApp) return;
@@ -158,13 +185,31 @@ function App() {
     };
 
     if (isLocked && config) {
+        // Determine which end time to show
+        let effectiveEndTime = config.lock_end_time;
+        if (activeScheduleEndTime) {
+            // If manual lock is ALSO active and ends later, use that? 
+            // Logic: If manual lock is active, use it. If not, use schedule.
+            // But what if both? Usually manual overrides.
+            // Let's check logic: isLocked is OR.
+            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > new Date();
+            if (!manualActive) {
+                effectiveEndTime = activeScheduleEndTime.toISOString();
+            } else {
+                // Both active? Show whichever is longer? Or just manual?
+                // Let's default to max of both to be safe, or just stick to manual if present.
+                // If manual is active, user specifically requested it.
+            }
+        }
+
         return (
             <FocusActive
-                endTime={config.lock_end_time}
+                endTime={effectiveEndTime}
                 blockedApps={config.blocked_apps}
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
                 pausedUntil={config.paused_until}
+                isSchedule={!!activeScheduleEndTime && !(config.lock_end_time && new Date(config.lock_end_time) > new Date())}
             />
         );
     }

@@ -4,6 +4,7 @@ import { AppSelector } from "./AppSelector";
 import { InlineKeypad } from "./InlineKeypad";
 import { TimeSeeker } from './TimeSeeker';
 import { WebsiteSelector } from './WebsiteSelector';
+import { ScheduleList } from './ScheduleList';
 import { useState } from "react";
 import logo from '../assets/logo.png';
 
@@ -70,6 +71,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 }) => {
     const [inputMode, setInputMode] = useState<'slider' | 'keypad'>('slider');
     const [activeTab, setActiveTab] = useState<'apps' | 'websites'>('apps');
+    const [sessionType, setSessionType] = useState<'manual' | 'scheduled'>('manual');
     const [showDetails, setShowDetails] = useState(false);
 
     if (!config) return (
@@ -118,39 +120,69 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         <div className="bg-slate-900/40 backdrop-blur-md rounded-2xl border border-white/5 p-6 shadow-2xl relative overflow-hidden group h-full flex flex-col">
                             <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none"></div>
 
-                            <div className="relative flex-1 flex flex-col justify-center">
-                                <h2 className="text-2xl font-semibold text-white mb-2">Start Session</h2>
-                                <p className="text-slate-400 mb-8 text-sm leading-relaxed">
-                                    Set your duration. Once started, focus is enforced until time expires.
-                                </p>
-
-                                <div className="bg-slate-950/50 rounded-2xl border border-white/5 shadow-inner flex flex-col justify-center relative overflow-hidden h-[340px]">
-                                    {inputMode === 'slider' ? (
-                                        <>
-                                            <TimeSeeker
-                                                onDurationChange={(h, m) => setPendingSession({ h, m })}
-                                                onStart={() => setShowConfirm(true)} // Trigger confirmation directly
-                                                initialMinutes={pendingSession ? (pendingSession.h * 60 + pendingSession.m) : 15}
-                                            />
-                                            <button
-                                                onClick={() => setInputMode('keypad')}
-                                                className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
-                                            >
-                                                Custom Time &rarr;
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <div className="w-full h-full p-6 flex flex-col items-center justify-center">
-                                            <InlineKeypad onStart={handleRequestStart} />
-                                            <button
-                                                onClick={() => setInputMode('slider')}
-                                                className="mt-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
-                                            >
-                                                &larr; Back to Presets
-                                            </button>
-                                        </div>
-                                    )}
+                            {/* Session Type Switcher */}
+                            <div className="relative z-10 flex justify-center mb-6">
+                                <div className="bg-slate-950/50 p-1 rounded-xl border border-white/5 flex gap-1">
+                                    <button
+                                        onClick={() => setSessionType('manual')}
+                                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${sessionType === 'manual' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        Manual Session
+                                    </button>
+                                    <button
+                                        onClick={() => setSessionType('scheduled')}
+                                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${sessionType === 'scheduled' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                    >
+                                        Scheduled Session
+                                    </button>
                                 </div>
+                            </div>
+
+                            <div className="relative flex-1 flex flex-col min-h-0">
+                                {sessionType === 'manual' ? (
+                                    <>
+                                        <div className="flex flex-col flex-1 justify-center">
+                                            <h2 className="text-2xl font-semibold text-white mb-2 text-center">Start Session</h2>
+                                            <p className="text-slate-400 mb-6 text-sm leading-relaxed text-center max-w-xs mx-auto">
+                                                Set your duration. Once started, focus is enforced until time expires.
+                                            </p>
+
+                                            <div className="bg-slate-950/50 rounded-2xl border border-white/5 shadow-inner flex flex-col justify-center relative overflow-hidden h-[320px]">
+                                                {inputMode === 'slider' ? (
+                                                    <>
+                                                        <TimeSeeker
+                                                            onDurationChange={(h, m) => setPendingSession({ h, m })}
+                                                            onStart={() => setShowConfirm(true)} // Trigger confirmation directly
+                                                            initialMinutes={pendingSession ? (pendingSession.h * 60 + pendingSession.m) : 15}
+                                                        />
+                                                        <button
+                                                            onClick={() => setInputMode('keypad')}
+                                                            className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                                        >
+                                                            Custom Time &rarr;
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <div className="w-full h-full p-6 flex flex-col items-center justify-center">
+                                                        <InlineKeypad onStart={handleRequestStart} />
+                                                        <button
+                                                            onClick={() => setInputMode('slider')}
+                                                            className="mt-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                                        >
+                                                            &larr; Back to Presets
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col flex-1 min-h-0">
+                                        <div className="bg-slate-950/30 rounded-2xl border border-white/5 flex-1 overflow-hidden p-4">
+                                            <ScheduleList />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -282,110 +314,114 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         </div>
                     </div>
                 </div>
+
+
+
+                <AppSelector
+                    isOpen={isSelectorOpen}
+                    onClose={() => setIsSelectorOpen(false)}
+                    onSave={handleSaveApps}
+                    currentlyBlocked={config.blocked_apps || []}
+                />
+
+                {/* Confirmation Modal */}
+                {
+                    showConfirm && pendingSession && (
+                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                            <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-6 transform scale-100">
+                                <div className="text-center space-y-2">
+                                    <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-500/20">
+                                        <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                        </svg>
+                                    </div>
+                                    <h3 className="text-lg font-bold text-white">Confirm Lock</h3>
+                                    <p className="text-slate-400 text-sm">
+                                        You are about to enter a <span className="text-blue-400 font-bold">{pendingSession.h}h {pendingSession.m}m</span> strict focus session.
+                                    </p>
+                                </div>
+
+                                <div className="bg-black/20 rounded-lg border border-white/5 overflow-hidden">
+                                    <div className="p-4 space-y-3">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-slate-500">Duration</span>
+                                            <span className="text-white font-mono font-medium">{pendingSession.h > 0 ? `${pendingSession.h} h` : ''}{pendingSession.m}m 00s</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-slate-500">Apps Blocked</span>
+                                            <span className="text-white font-medium">{config.blocked_apps.length} Applications</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-slate-500">Websites Blocked</span>
+                                            <span className="text-white font-medium">{config.blocked_sites?.length || 0} Websites</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Collapsible Details */}
+                                    {showDetails && (
+                                        <div className="bg-slate-950/30 px-4 py-3 border-t border-white/5 max-h-40 overflow-y-auto custom-scrollbar">
+                                            {config.blocked_apps.length > 0 && (
+                                                <div className="mb-3">
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Applications</h4>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {config.blocked_apps.map(app => (
+                                                            <span key={app} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-white/5">
+                                                                {appMap.get(app.toLowerCase())?.name || app}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {(config.blocked_sites?.length || 0) > 0 && (
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Websites</h4>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {config.blocked_sites.map(site => (
+                                                            <span key={site} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-white/5">
+                                                                {site}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    <button
+                                        onClick={() => setShowDetails(!showDetails)}
+                                        className="w-full py-2 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-blue-400 hover:bg-white/5 transition-colors border-t border-white/5"
+                                    >
+                                        <span>{showDetails ? 'Hide Details' : 'View Blocked List'}</span>
+                                        <svg className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowConfirm(false)}
+                                        className="flex-1 px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={confirmStart}
+                                        className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-blue-900/40 transition-all text-sm"
+                                    >
+                                        Start Focus
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-center text-slate-500 mt-2">
+                                    Session cannot be cancelled once started.
+                                </p>
+                            </div>
+                        </div>
+                    )
+                }
             </div>
-
-            <AppSelector
-                isOpen={isSelectorOpen}
-                onClose={() => setIsSelectorOpen(false)}
-                onSave={handleSaveApps}
-                currentlyBlocked={config.blocked_apps || []}
-            />
-
-            {/* Confirmation Modal */}
-            {showConfirm && pendingSession && (
-                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                    <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-6 transform scale-100">
-                        <div className="text-center space-y-2">
-                            <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-500/20">
-                                <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                </svg>
-                            </div>
-                            <h3 className="text-lg font-bold text-white">Confirm Lock</h3>
-                            <p className="text-slate-400 text-sm">
-                                You are about to enter a <span className="text-blue-400 font-bold">{pendingSession.h}h {pendingSession.m}m</span> strict focus session.
-                            </p>
-                        </div>
-
-                        <div className="bg-black/20 rounded-lg border border-white/5 overflow-hidden">
-                            <div className="p-4 space-y-3">
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Duration</span>
-                                    <span className="text-white font-mono font-medium">{pendingSession.h > 0 ? `${pendingSession.h} h` : ''}{pendingSession.m}m 00s</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Apps Blocked</span>
-                                    <span className="text-white font-medium">{config.blocked_apps.length} Applications</span>
-                                </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-500">Websites Blocked</span>
-                                    <span className="text-white font-medium">{config.blocked_sites?.length || 0} Websites</span>
-                                </div>
-                            </div>
-
-                            {/* Collapsible Details */}
-                            {showDetails && (
-                                <div className="bg-slate-950/30 px-4 py-3 border-t border-white/5 max-h-40 overflow-y-auto custom-scrollbar">
-                                    {config.blocked_apps.length > 0 && (
-                                        <div className="mb-3">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Applications</h4>
-                                            <div className="flex flex-wrap gap-1">
-                                                {config.blocked_apps.map(app => (
-                                                    <span key={app} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-white/5">
-                                                        {appMap.get(app.toLowerCase())?.name || app}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {(config.blocked_sites?.length || 0) > 0 && (
-                                        <div>
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Websites</h4>
-                                            <div className="flex flex-wrap gap-1">
-                                                {config.blocked_sites.map(site => (
-                                                    <span key={site} className="text-xs bg-slate-800 text-slate-300 px-2 py-1 rounded border border-white/5">
-                                                        {site}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            <button
-                                onClick={() => setShowDetails(!showDetails)}
-                                className="w-full py-2 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-blue-400 hover:bg-white/5 transition-colors border-t border-white/5"
-                            >
-                                <span>{showDetails ? 'Hide Details' : 'View Blocked List'}</span>
-                                <svg className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="flex gap-3">
-                            <button
-                                onClick={() => setShowConfirm(false)}
-                                className="flex-1 px-4 py-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors text-sm"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={confirmStart}
-                                className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-blue-900/40 transition-all text-sm"
-                            >
-                                Start Focus
-                            </button>
-                        </div>
-
-                        <p className="text-xs text-center text-slate-500 mt-2">
-                            Session cannot be cancelled once started.
-                        </p>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

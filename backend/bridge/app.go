@@ -7,6 +7,7 @@ import (
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/sysinfo"
+	"focus-lock/backend/watchdog"
 	"os"
 	"os/exec"
 	"sort"
@@ -38,6 +39,11 @@ func NewApp() *App {
 // So yes, Startup (capital S) or just call it Startup.
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
+	// Start the Enforcer in the background of the UI process
+	// This ensures schedules are enforced while the app is open.
+	// For persistence after close, we rely on the Ghost process (if started)
+	// or in future, a dedicated service.
+	go watchdog.StartEnforcer(a.Store)
 }
 
 // --- Exposed Methods ---
@@ -164,6 +170,22 @@ func (a *App) SetBlockCommonVPN(enabled bool) error {
 func (a *App) GetBlockCommonVPN() bool {
 	a.Store.Load()
 	return a.Store.Data.BlockCommonVPN
+}
+
+// --- Schedule Methods ---
+
+func (a *App) GetSchedules() []storage.Schedule {
+	a.Store.Load()
+	if a.Store.Data.Schedules == nil {
+		return []storage.Schedule{}
+	}
+	return a.Store.Data.Schedules
+}
+
+func (a *App) SaveSchedules(schedules []storage.Schedule) error {
+	a.Store.Load()
+	a.Store.Data.Schedules = schedules
+	return a.Store.Save()
 }
 
 // SetBlockedApps updates the entire list of blocked apps at once.

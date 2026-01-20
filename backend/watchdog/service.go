@@ -2,7 +2,6 @@ package watchdog
 
 import (
 	"fmt"
-	"focus-lock/backend/ntp"
 	"focus-lock/backend/storage"
 	"os"
 	"path/filepath"
@@ -43,83 +42,49 @@ func debugLog(msg string) {
 	f.WriteString(time.Now().Format(time.RFC3339) + " " + msg + "\n")
 }
 
-// StartEnforcer runs deeply in the background. It monitors the lock time.
+// isScheduleActive checks if any enabled schedule matches the current time
+func isScheduleActive(schedules []storage.Schedule) bool {
+	now := time.Now()
+	currentDay := now.Format("Mon")    // "Mon", "Tue", ...
+	currentTime := now.Format("15:04") // "HH:MM"
+
+	for _, s := range schedules {
+		if !s.Enabled {
+			continue
+		}
+
+		// Check Day
+		dayMatch := false
+		for _, d := range s.Days {
+			if d == currentDay {
+				dayMatch = true
+				break
+			}
+		}
+		if !dayMatch {
+			continue
+		}
+
+		// Check Time Range
+		// Simple string comparison works for 24h "HH:MM" format
+		if currentTime >= s.StartTime && currentTime < s.EndTime {
+			return true
+		}
+	}
+	return false
+}
+
+// StartEnforcer runs deeply in the background. It monitors the lock time and schedules.
 func StartEnforcer(store *storage.Store) {
 	debugLog("Enforcer Watchdog Started")
 
-	// Initial Load to calculate duration
-	store.Load()
-	if store.Data.LockEndTime.IsZero() {
-		return
-	}
-
-	// SECURITY: Check Network Time to detect system time manipulation (e.g. user rebooted and changed BIOS time)
-	// SECURITY: Check Network Time to detect system time manipulation
-	offset, err := ntp.GetOffset()
-	now := time.Now()
-	var remaining time.Duration
-
-	// 1. OFFLINE / NTP FAILURE FALLBACK
-	if err != nil {
-		debugLog(fmt.Sprintf("NTP Check failed: %s. Using Usage-Based Countdown.", err.Error()))
-
-		// Fallback: If we trust the local timer, the user could have skipped ahead.
-		// Instead, we trust RemainingDuration.
-		// We RESET LockEndTime to Now + RemainingDuration.
-		// This effectively PAUSES the timer while the machine was off/offline.
-		// The user must spend 'RemainingDuration' amount of time ONLINE or RUNNING.
-
-		if store.Data.RemainingDuration > 0 {
-			remaining = store.Data.RemainingDuration
-			// Reset end time to prevent immediate unlocking if system time jumped
-			store.Data.LockEndTime = now.Add(remaining)
-			store.Save()
-			debugLog(fmt.Sprintf("Offline Fallback: Resuming with %v remaining", remaining))
-		} else {
-			// Weird state: LockEndTime set but RemainingDuration 0?
-			// Maybe old version. Fallback to system time check.
-			remaining = store.Data.LockEndTime.Sub(now)
-		}
-	} else {
-		// 2. ONLINE / NTP SUCCESS
-		debugLog(fmt.Sprintf("NTP Success. Offset: %v", offset))
-		now = now.Add(offset)
-		remaining = store.Data.LockEndTime.Sub(now)
-
-		// Sync RemainingDuration valid
-		if remaining > 0 {
-			store.Data.RemainingDuration = remaining
-			store.Save()
-		}
-	}
-
-	if remaining <= 0 {
-		debugLog("Lock time already expired (Network Validated). Exiting.")
-		return
-	}
-
-	// SECURITY: Use Monotonic Time for the deadline!
-	// time.Now() returns a time with a monotonic clock reading.
-	// Adding duration to it preserves the monotonic reading.
-	// Comparisons (After, Before) use the monotonic reading if present.
-	// This means changing the System Wall Clock will NOT affect this deadline.
-	monotonicDeadline := time.Now().Add(remaining)
-	monotonicStartTime := time.Now()
-	initialDuration := remaining
-
-	debugLog(fmt.Sprintf("Locking for %v (Until monotonic: %v)", remaining, monotonicDeadline))
-
-	// Main Polling Ticker (Aggressive for instant kill)
-	ticker := time.NewTicker(200 * time.Millisecond)
+	// Main Polling Ticker (Aggressive for coverage)
+	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
 	// Update Loop: Save usage & Anti-Cheat (Deep Check)
-	slowTicker := time.NewTicker(4 * time.Second)
+	slowTicker := time.NewTicker(5 * time.Second)
 	defer slowTicker.Stop()
-
-	// 3. INITIAL HOSTS BLOCK
-	blockSites(store)
-	defer hosts.Unblock()
 
 	// Helper to refresh cache
 	refreshCache := func() ([]string, map[string]bool, error) {
@@ -141,64 +106,109 @@ func StartEnforcer(store *storage.Store) {
 
 	cachedBlockedApps, cachedLookup, _ := refreshCache()
 
+	// Initial check to block immediately if needed
+	store.Load()
+	if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
+		blockSites(store)
+	} else if isScheduleActive(store.Data.Schedules) {
+		blockSites(store)
+	}
+
+	defer hosts.Unblock()
+
 	for {
 		select {
 		case <-ticker.C:
-			// Check expiry against MONOTONIC deadline
-			if time.Now().After(monotonicDeadline) {
-				debugLog("Lock time expired (Monotonic match). Exiting Enforcer.")
-				store.Data.RemainingDuration = 0
-				store.Save()
-				return
-			}
+			// fast loop
+			// RELOAD Config on fast loop? No, too expensive.
+			// But we need to know if we should be enforcing.
 
-			// CHECK PAUSE (Fast)
-			// Accessed sequentially in single goroutine, so safe after refreshCache update
+			// For Manual Lock, we trust the in-memory state or lightweight check?
+			// We MUST check time. So we use the loaded store data.
+
+			// 1. Check Locked State
+			manualActive := !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime)
+
+			// 2. Check Schedule State
+			// Schedule needs current time, which changes.
+			// However schedule definitions (Schedules list) change rarely.
+			// We use cached store data for schedule definitions until slow tick reloads.
+			scheduleActive := isScheduleActive(store.Data.Schedules)
+
+			shouldEnforce := manualActive || scheduleActive
+
+			// 3. Check Pause
 			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
-				continue
+				shouldEnforce = false
 			}
 
-			// FAST CHECK (Name only, using Map) every 200ms
-			enforceFast(cachedLookup, store)
+			if shouldEnforce {
+				enforceFast(cachedLookup, store)
+			} else {
+				// If we just exited a lock state, we should unblock (Hosts).
+				// But doing it here every 500ms is spammy.
+				// We rely on SlowLoop to handle state transitions or just leave it until SlowLoop cleans up.
+			}
 
 		case <-slowTicker.C:
-			// 2. Decrement Duration (Atomic Update)
-			// We use UpdateAtomic to ensure we don't overwrite "PausedUntil" if the UI updated it
-			// while we were sleeping.
-			elapsed := time.Since(monotonicStartTime)
-			newRemaining := initialDuration - elapsed
-			if newRemaining < 0 {
-				newRemaining = 0
-			}
+			// SLOW LOOP - Reload Config & Deep Check
 
-			err := store.UpdateAtomic(func(cfg *storage.Config) {
-				cfg.RemainingDuration = newRemaining
-			})
-			if err != nil {
-				debugLog("Failed to update remaining duration: " + err.Error())
-				// Continue anyway, we'll try again next tick
-			}
-
-			// 1. Reload Config for local usage (Apps/Sites)
-			// refreshCache calls Load(), which gets the latest state including any PausedUntil
+			// 1. Reload Config
 			newApps, newLookup, err := refreshCache()
 			if err != nil {
 				debugLog("Config reload failed: " + err.Error())
-				// We still enforce with old cache if possible
 			} else {
 				cachedBlockedApps, cachedLookup = newApps, newLookup
 			}
 
-			// CHECK PAUSE (Slow/Deep)
+			// 2. Recalculate State with fresh data
+			manualActive := !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime)
+
+			// NTP Check logic could go here, but for now we trust local time for simplicity in V1 schedule
+			// For Manual Lock, we still respect the monotonic expiration if we were tracking it,
+			// but we simplify here to just check valid LockEndTime.
+
+			scheduleActive := isScheduleActive(store.Data.Schedules)
+			shouldEnforce := manualActive || scheduleActive
+
+			// 3. Check Pause
 			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
-				debugLog("Emergency Unlocked (Paused). Unblocking hosts temporarily.")
+				debugLog("Emergency Unlocked (Paused). Unblocking hosts.")
 				hosts.Unblock()
 				continue
 			}
 
-			// 3. DEEP CHECK (Metadata for renamed apps) & Re-apply Hosts
-			enforceDeep(cachedBlockedApps, store)
-			blockSites(store)
+			if shouldEnforce {
+				// 4. Update Remaining Duration (Only for Manual Lock)
+				if manualActive {
+					updatedRemaining := store.Data.LockEndTime.Sub(time.Now())
+					if updatedRemaining < 0 {
+						updatedRemaining = 0
+					}
+
+					// Atomic update to avoid race
+					store.UpdateAtomic(func(cfg *storage.Config) {
+						cfg.RemainingDuration = updatedRemaining
+					})
+				}
+
+				// 5. Deep Enforce
+				enforceDeep(cachedBlockedApps, store)
+				blockSites(store)
+			} else {
+				// Not enforcing. Ensure Unblock.
+				// Only unblock if we haven't already?
+				// hosts.Unblock() is cheap enough (checks if file is modified).
+				hosts.Unblock()
+
+				// Cleanup expired manual lock
+				if !store.Data.LockEndTime.IsZero() && time.Now().After(store.Data.LockEndTime) {
+					// Clear the lock
+					store.Data.LockEndTime = time.Time{}
+					store.Data.RemainingDuration = 0
+					store.Save()
+				}
+			}
 		}
 	}
 }
