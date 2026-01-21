@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, SetBlockCommonVPN } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
@@ -150,6 +150,17 @@ function App() {
         }
     };
 
+    // Import settings from JSON
+    const handleImportSettings = async (jsonContent: string) => {
+        try {
+            await ImportSettings(jsonContent);
+            refresh();
+        } catch (err: any) {
+            setError("Import failed: " + err.toString());
+            throw err; // Re-throw to let caller handle UI
+        }
+    };
+
     // Called by Keypad "OK"
     const handleRequestStart = (h: number, m: number) => {
         const totalSeconds = (h * 3600) + (m * 60);
@@ -260,6 +271,7 @@ function App() {
             handleAddSites={handleAddSites}
             handleRemoveSites={handleRemoveSites}
             handleToggleVPN={handleToggleVPN}
+            handleImportSettings={handleImportSettings}
         />
     );
 }

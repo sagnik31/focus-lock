@@ -18,6 +18,10 @@ export function EmergencyUnlock() {
   return window['go']['bridge']['App']['EmergencyUnlock']();
 }
 
+export function ExportSettings() {
+  return window['go']['bridge']['App']['ExportSettings']();
+}
+
 export function GetBlockCommonVPN() {
   return window['go']['bridge']['App']['GetBlockCommonVPN']();
 }
@@ -40,6 +44,10 @@ export function GetSchedules() {
 
 export function GetTopBlockedApps() {
   return window['go']['bridge']['App']['GetTopBlockedApps']();
+}
+
+export function ImportSettings(arg1) {
+  return window['go']['bridge']['App']['ImportSettings'](arg1);
 }
 
 export function RemoveApp(arg1) {

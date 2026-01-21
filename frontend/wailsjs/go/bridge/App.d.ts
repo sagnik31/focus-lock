@@ -11,6 +11,8 @@ export function AddBlockedSites(arg1:Array<string>):Promise<void>;
 
 export function EmergencyUnlock():Promise<void>;
 
+export function ExportSettings():Promise<string>;
+
 export function GetBlockCommonVPN():Promise<boolean>;
 
 export function GetBlockedSites():Promise<Array<string>>;
@@ -22,6 +24,8 @@ export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 export function GetSchedules():Promise<Array<storage.Schedule>>;
 
 export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;
+
+export function ImportSettings(arg1:string):Promise<void>;
 
 export function RemoveApp(arg1:string):Promise<void>;
 

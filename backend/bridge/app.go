@@ -54,19 +54,38 @@ func (a *App) Startup(ctx context.Context) {
 			a.Store.Data.GhostExePath = ""
 			a.Store.Save()
 		}
-	} else if hasEnabledSchedules && a.Store.Data.GhostTaskName == "" {
-		// Enabled schedule(s) exist but no Ghost is set up. Spawn one now.
-		// This ensures enforcement persists even if user closes the UI before schedule activates.
-		currentExe, err := os.Executable()
-		if err == nil {
-			taskName := obfuscation.GenerateTaskName()
-			ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
-			if err == nil {
-				a.Store.Data.GhostTaskName = taskName
-				a.Store.Data.GhostExePath = ghostExe
-				a.Store.Save()
-				_ = scheduler.EnablePersistence(ghostExe, taskName)
-				_ = spawnGhost(ghostExe, taskName)
+	} else if hasEnabledSchedules {
+		// Check if Ghost is actually running (it may have exited or never started after reboot)
+		ghostRunning := isGhostProcessRunning()
+
+		if !ghostRunning {
+			// Ghost is NOT running. We need to spawn one.
+			// Check if Ghost executable exists (it may have been deleted/cleaned up)
+			ghostExeExists := false
+			if a.Store.Data.GhostExePath != "" {
+				if _, err := os.Stat(a.Store.Data.GhostExePath); err == nil {
+					ghostExeExists = true
+				}
+			}
+
+			if a.Store.Data.GhostTaskName == "" || !ghostExeExists {
+				// No Ghost was ever set up OR the exe is missing. Create a new one.
+				currentExe, err := os.Executable()
+				if err == nil {
+					taskName := obfuscation.GenerateTaskName()
+					ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
+					if err == nil {
+						a.Store.Data.GhostTaskName = taskName
+						a.Store.Data.GhostExePath = ghostExe
+						a.Store.Save()
+						_ = scheduler.EnablePersistence(ghostExe, taskName)
+						_ = spawnGhost(ghostExe, taskName)
+					}
+				}
+			} else {
+				// Ghost was set up before (e.g., before reboot) but isn't running.
+				// Re-spawn it using the existing task.
+				_ = spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName)
 			}
 		}
 	}
