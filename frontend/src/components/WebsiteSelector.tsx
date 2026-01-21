@@ -8,6 +8,7 @@ interface WebsiteSelectorProps {
     onRemoveSites: (urls: string[]) => void;
     blockVPN: boolean;
     onToggleVPN: (val: boolean) => void;
+    isLocked?: boolean;
 }
 
 export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
@@ -17,7 +18,8 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
     onAddSites,
     onRemoveSites,
     blockVPN,
-    onToggleVPN
+    onToggleVPN,
+    isLocked
 }) => {
     const [input, setInput] = useState("");
 
@@ -87,15 +89,17 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                                         {site}
                                     </span>
                                 </div>
-                                <button
-                                    onClick={() => onRemove(site)}
-                                    className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
-                                    title="Remove"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                </button>
+                                {!isLocked && (
+                                    <button
+                                        onClick={() => onRemove(site)}
+                                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
+                                        title="Remove"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -108,9 +112,11 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
 
                         const toggleCategory = () => {
                             if (areAllBlocked) {
-                                // Remove all
-                                const toRemove = items.filter(site => sites.includes(site));
-                                if (toRemove.length > 0) onRemoveSites(toRemove);
+                                // Remove all - only if not locked
+                                if (!isLocked) {
+                                    const toRemove = items.filter(site => sites.includes(site));
+                                    if (toRemove.length > 0) onRemoveSites(toRemove);
+                                }
                             } else {
                                 // Add missing
                                 const toAdd = items.filter(site => !sites.includes(site));

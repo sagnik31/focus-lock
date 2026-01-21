@@ -13,6 +13,7 @@ function App() {
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
     const [topApps, setTopApps] = useState<sysinfo.AppInfo[]>([]);
+    const [focusViewMode, setFocusViewMode] = useState<'active' | 'settings'>('active');
 
     const refresh = async () => {
         try {
@@ -195,37 +196,6 @@ function App() {
         }
     };
 
-    if (isLocked && config) {
-        // Determine which end time to show
-        let effectiveEndTime = config.lock_end_time;
-        if (activeScheduleEndTime) {
-            // If manual lock is ALSO active and ends later, use that? 
-            // Logic: If manual lock is active, use it. If not, use schedule.
-            // But what if both? Usually manual overrides.
-            // Let's check logic: isLocked is OR.
-            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > new Date();
-            if (!manualActive) {
-                effectiveEndTime = activeScheduleEndTime.toISOString();
-            } else {
-                // Both active? Show whichever is longer? Or just manual?
-                // Let's default to max of both to be safe, or just stick to manual if present.
-                // If manual is active, user specifically requested it.
-            }
-        }
-
-        return (
-            <FocusActive
-                endTime={effectiveEndTime}
-                blockedApps={config.blocked_apps}
-                blockedSites={config.blocked_sites || []}
-                appMap={appMap}
-                pausedUntil={config.paused_until}
-                emergencyUnlocksUsed={config.emergency_unlocks_used}
-                isSchedule={!!activeScheduleEndTime && !(config.lock_end_time && new Date(config.lock_end_time) > new Date())}
-            />
-        );
-    }
-
     const handleAddSites = (urls: string[]) => {
         // @ts-ignore
         if (window.go.bridge.App && window.go.bridge.App.AddBlockedSites) {
@@ -245,6 +215,72 @@ function App() {
             });
         }
     };
+
+    if (isLocked && config) {
+        // Determine which end time to show
+        let effectiveEndTime = config.lock_end_time;
+        if (activeScheduleEndTime) {
+            // If manual lock is ALSO active and ends later, use that? 
+            // Logic: If manual lock is active, use it. If not, use schedule.
+            // But what if both? Usually manual overrides.
+            // Let's check logic: isLocked is OR.
+            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > new Date();
+            if (!manualActive) {
+                effectiveEndTime = activeScheduleEndTime.toISOString();
+            } else {
+                // Both active? Show whichever is longer? Or just manual?
+                // Let's default to max of both to be safe, or just stick to manual if present.
+                // If manual is active, user specifically requested it.
+            }
+        }
+
+        // If user wants to see settings during active session
+        if (focusViewMode === 'settings') {
+            return (
+                <AppLayout
+                    config={config}
+                    newApp={newApp}
+                    setNewApp={setNewApp}
+                    error={error}
+                    isSelectorOpen={isSelectorOpen}
+                    setIsSelectorOpen={setIsSelectorOpen}
+                    showConfirm={showConfirm}
+                    setShowConfirm={setShowConfirm}
+                    pendingSession={pendingSession}
+                    setPendingSession={setPendingSession}
+                    topApps={topApps}
+                    appMap={appMap}
+                    handleAdd={handleAdd}
+                    handleAddByName={handleAddByName}
+                    handleRemove={handleRemove}
+                    handleSaveApps={handleSaveApps}
+                    handleRequestStart={handleRequestStart}
+                    confirmStart={confirmStart}
+                    handleAddSite={handleAddSite}
+                    handleRemoveSite={handleRemoveSite}
+                    handleAddSites={handleAddSites}
+                    handleRemoveSites={handleRemoveSites}
+                    handleToggleVPN={handleToggleVPN}
+                    handleImportSettings={handleImportSettings}
+                    isLocked={true}
+                    onBackToFocus={() => setFocusViewMode('active')}
+                />
+            );
+        }
+
+        return (
+            <FocusActive
+                endTime={effectiveEndTime}
+                blockedApps={config.blocked_apps}
+                blockedSites={config.blocked_sites || []}
+                appMap={appMap}
+                pausedUntil={config.paused_until}
+                emergencyUnlocksUsed={config.emergency_unlocks_used}
+                isSchedule={!!activeScheduleEndTime && !(config.lock_end_time && new Date(config.lock_end_time) > new Date())}
+                onShowSettings={() => setFocusViewMode('settings')}
+            />
+        );
+    }
 
     return (
         <AppLayout

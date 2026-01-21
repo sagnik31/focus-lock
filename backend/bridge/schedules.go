@@ -1,10 +1,13 @@
 package bridge
 
 import (
+	"errors"
 	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
+	"focus-lock/backend/watchdog"
 	"os"
+	"time"
 )
 
 // GetSchedules returns all schedules
@@ -19,6 +22,33 @@ func (a *App) GetSchedules() []storage.Schedule {
 // SaveSchedules saves schedules and spawns Ghost if needed
 func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 	a.Store.Load()
+
+	// Check for active session
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
+	isLocked := manualActive || scheduleActive
+
+	if isLocked {
+		// Identify disabled or deleted schedules that were previously enabled
+		newScheduleMap := make(map[string]storage.Schedule)
+		for _, s := range schedules {
+			newScheduleMap[s.ID] = s
+		}
+
+		for _, oldSch := range a.Store.Data.Schedules {
+			if oldSch.Enabled {
+				// Check if it exists and is still enabled
+				newSch, exists := newScheduleMap[oldSch.ID]
+				if !exists {
+					return errors.New("cannot delete enabled schedules during an active focus session")
+				}
+				if !newSch.Enabled {
+					return errors.New("cannot disable active schedules during an active focus session")
+				}
+			}
+		}
+	}
+
 	a.Store.Data.Schedules = schedules
 	if err := a.Store.Save(); err != nil {
 		return err

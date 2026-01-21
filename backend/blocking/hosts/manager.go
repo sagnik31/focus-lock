@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -76,7 +77,13 @@ func Block(domains []string) error {
 
 	// Write back
 	// Atomic write is hard with system files because of permissions/attributes, so strictly truncate and write.
-	return os.WriteFile(hostsPath, []byte(finalContent), 0644)
+	if err := os.WriteFile(hostsPath, []byte(finalContent), 0644); err != nil {
+		return err
+	}
+
+	// Flush DNS Cache
+	_ = exec.Command("ipconfig", "/flushdns").Run()
+	return nil
 }
 
 // Unblock removes our section from the hosts file.
@@ -113,7 +120,13 @@ func Unblock() error {
 	}
 
 	finalContent := strings.Join(newLines, "\n")
-	return os.WriteFile(hostsPath, []byte(finalContent), 0644)
+	if err := os.WriteFile(hostsPath, []byte(finalContent), 0644); err != nil {
+		return err
+	}
+
+	// Flush DNS Cache
+	_ = exec.Command("ipconfig", "/flushdns").Run()
+	return nil
 }
 
 func ensureWritable(path string) error {

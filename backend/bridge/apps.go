@@ -1,9 +1,12 @@
 package bridge
 
 import (
+	"errors"
 	"focus-lock/backend/sysinfo"
+	"focus-lock/backend/watchdog"
 	"sort"
 	"strings"
+	"time"
 )
 
 // GetInstalledApps returns a list of installed applications
@@ -13,6 +16,10 @@ func (a *App) GetInstalledApps() ([]sysinfo.AppInfo, error) {
 
 // AddApp adds an app to the blocked list
 func (a *App) AddApp(appName string) error {
+	appName = strings.TrimSpace(appName)
+	if appName == "" {
+		return errors.New("app name cannot be empty")
+	}
 	a.Store.Load()
 	// Check duplicate
 	for _, existing := range a.Store.Data.BlockedApps {
@@ -28,6 +35,14 @@ func (a *App) AddApp(appName string) error {
 // RemoveApp removes an app from the blocked list
 func (a *App) RemoveApp(appName string) error {
 	a.Store.Load()
+
+	// Check if session is active - prevent removal during active session
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
+	if manualActive || scheduleActive {
+		return errors.New("cannot remove apps during an active focus session")
+	}
+
 	newApps := []string{}
 	for _, existing := range a.Store.Data.BlockedApps {
 		if existing != appName {

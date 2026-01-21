@@ -1,9 +1,12 @@
 package bridge
 
 import (
+	"errors"
 	"fmt"
 	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/watchdog"
 	"sort"
+	"time"
 )
 
 // GetBlockedSites returns the list of blocked websites
@@ -37,6 +40,14 @@ func (a *App) AddBlockedSite(url string) error {
 // RemoveBlockedSite removes a website from the blocked list
 func (a *App) RemoveBlockedSite(url string) error {
 	a.Store.Load()
+
+	// Check if session is active - prevent removal during active session
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
+	if manualActive || scheduleActive {
+		return errors.New("cannot remove sites during an active focus session")
+	}
+
 	newSites := []string{}
 	for _, existing := range a.Store.Data.BlockedSites {
 		if existing != url {
@@ -86,6 +97,14 @@ func (a *App) AddBlockedSites(urls []string) error {
 // RemoveBlockedSites removes multiple websites from the blocked list
 func (a *App) RemoveBlockedSites(urls []string) error {
 	a.Store.Load()
+
+	// Check if session is active - prevent removal during active session
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
+	if manualActive || scheduleActive {
+		return errors.New("cannot remove sites during an active focus session")
+	}
+
 	toRemove := make(map[string]bool)
 	for _, url := range urls {
 		toRemove[url] = true

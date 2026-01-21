@@ -45,6 +45,10 @@ interface AppLayoutProps {
 
     // Import Handler
     handleImportSettings: (jsonContent: string) => Promise<void>;
+
+    // Session-aware mode
+    isLocked?: boolean;
+    onBackToFocus?: () => void;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -71,7 +75,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     handleToggleVPN,
     handleAddSites,
     handleRemoveSites,
-    handleImportSettings
+    handleImportSettings,
+    isLocked,
+    onBackToFocus
 }) => {
     const [inputMode, setInputMode] = useState<'slider' | 'keypad'>('slider');
     const [activeTab, setActiveTab] = useState<'apps' | 'websites'>('apps');
@@ -180,6 +186,32 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </div>
                 )}
 
+                {/* Locked Mode Banner */}
+                {isLocked && (
+                    <div className="mb-4 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 flex items-center justify-between backdrop-blur-sm shrink-0">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
+                                <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <p className="text-blue-300 font-semibold text-sm">Focus Active - Add-Only Mode</p>
+                                <p className="text-blue-400/70 text-xs">You can add new items but cannot remove existing ones</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={onBackToFocus}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                            </svg>
+                            Back to Focus
+                        </button>
+                    </div>
+                )}
+
                 {/* Main Content Grid - 50/50 Split */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
 
@@ -247,7 +279,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                 ) : (
                                     <div className="flex flex-col flex-1 min-h-0">
                                         <div className="bg-slate-950/30 rounded-2xl border border-white/5 flex-1 overflow-hidden p-4">
-                                            <ScheduleList />
+                                            <ScheduleList isLocked={isLocked} />
                                         </div>
                                     </div>
                                 )}
@@ -332,15 +364,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                                 </span>
                                                             </div>
                                                         </div>
-                                                        <button
-                                                            onClick={() => handleRemove(exeName)}
-                                                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
-                                                            title="Remove"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                            </svg>
-                                                        </button>
+                                                        {!isLocked && (
+                                                            <button
+                                                                onClick={() => handleRemove(exeName)}
+                                                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
+                                                                title="Remove"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                                </svg>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 );
                                             })
@@ -377,6 +411,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     onRemoveSites={handleRemoveSites}
                                     blockVPN={config.block_common_vpn || true}
                                     onToggleVPN={handleToggleVPN}
+                                    isLocked={isLocked}
                                 />
                             )}
                         </div>
@@ -390,6 +425,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     onClose={() => setIsSelectorOpen(false)}
                     onSave={handleSaveApps}
                     currentlyBlocked={config.blocked_apps || []}
+                    isLocked={isLocked}
                 />
 
                 {/* Import Settings Modal */}

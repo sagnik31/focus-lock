@@ -267,3 +267,7 @@ func (s *Store) GetBlockedDuration() map[string]int64 {
 	}
 	return copyMap
 }
+
+func (s *Store) GetFilePath() string {
+	return s.filePath
+}

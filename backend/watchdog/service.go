@@ -99,12 +99,23 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		// Build map for O(1) lookup
 		lookup := make(map[string]bool)
 		for _, app := range apps {
-			lookup[strings.ToLower(app)] = true
+			name := strings.ToLower(app)
+			lookup[name] = true
+			if !strings.HasSuffix(name, ".exe") {
+				lookup[name+".exe"] = true
+			}
 		}
 		return apps, lookup, nil
 	}
 
 	cachedBlockedApps, cachedLookup, _ := refreshCache()
+
+	// Initialize File Watcher
+	configPath := store.GetFilePath()
+	var lastModTime time.Time
+	if info, err := os.Stat(configPath); err == nil {
+		lastModTime = info.ModTime()
+	}
 
 	// Initial check to block immediately if needed
 	store.Load()
@@ -120,6 +131,28 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		select {
 		case <-ticker.C:
 			// fast loop
+
+			// 0. Check for Config Changes (Immediate Reaction)
+			if info, err := os.Stat(configPath); err == nil {
+				// Use !Equal to catch any modification (sometimes time resolution can be tricky)
+				if !info.ModTime().Equal(lastModTime) {
+					lastModTime = info.ModTime()
+					debugLog("Config file changed. Reloading cache...")
+					newApps, newLookup, err := refreshCache()
+					if err == nil {
+						cachedBlockedApps, cachedLookup = newApps, newLookup
+						// Force block sites immediately (Flush DNS)
+						// Also re-checks lock status inside blockSites/enforce
+						store.Load() // Ensure store.Data is latest for below checks
+						if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
+							blockSites(store)
+						} else if IsScheduleActive(store.Data.Schedules) {
+							blockSites(store)
+						}
+					}
+				}
+			}
+
 			// RELOAD Config on fast loop? No, too expensive.
 			// But we need to know if we should be enforcing.
 

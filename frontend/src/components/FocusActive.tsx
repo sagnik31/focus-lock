@@ -11,9 +11,10 @@ interface FocusActiveProps {
     appMap: Map<string, sysinfo.AppInfo>;
     isSchedule?: boolean;
     emergencyUnlocksUsed: number;
+    onShowSettings?: () => void;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
@@ -107,8 +108,8 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                     onClick={handleEmergencyUnlock}
                                     disabled={emergencyUnlocksUsed >= 2}
                                     className={`px-6 py-2 rounded-lg transition-all text-sm font-medium flex items-center gap-2 mx-auto ${emergencyUnlocksUsed >= 2
-                                            ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-700'
-                                            : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:scale-105 active:scale-95'
+                                        ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-700'
+                                        : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:scale-105 active:scale-95'
                                         }`}
                                     title={emergencyUnlocksUsed >= 2 ? "Emergency unlock limit reached" : "Unlocks apps for 1 minute"}
                                 >
@@ -121,6 +122,21 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                     <p className="text-xs text-slate-500">Session limit reached</p>
                                 )}
                             </div>
+
+                            {/* Manage Block List Button */}
+                            {onShowSettings && (
+                                <div className="pt-4">
+                                    <button
+                                        onClick={onShowSettings}
+                                        className="px-5 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-medium transition-all flex items-center gap-2 mx-auto border border-slate-600/50 hover:border-slate-500"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                        </svg>
+                                        Add More to Block List
+                                    </button>
+                                </div>
+                            )}
                         </>
                     )}
                 </div>

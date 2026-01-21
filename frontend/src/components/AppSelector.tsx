@@ -7,9 +7,10 @@ interface AppSelectorProps {
     onClose: () => void;
     onSave: (selectedApps: string[]) => void;
     currentlyBlocked: string[];
+    isLocked?: boolean;
 }
 
-export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSelectorProps) {
+export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocked }: AppSelectorProps) {
     const [apps, setApps] = useState<sysinfo.AppInfo[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
@@ -36,6 +37,11 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
     }, [isOpen]); // Removed currentlyBlocked from dependency to prevent reset on poll
 
     const toggleApp = (exeName: string) => {
+        // If locked, prevent unchecking existing apps
+        if (isLocked && currentlyBlocked.includes(exeName)) {
+            return;
+        }
+
         const newSelected = new Set(selected);
         if (newSelected.has(exeName)) {
             newSelected.delete(exeName);
@@ -99,7 +105,8 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked }: AppSe
                                         type="checkbox"
                                         checked={selected.has(app.exe)}
                                         readOnly
-                                        className="w-5 h-5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0 shrink-0"
+                                        disabled={isLocked && currentlyBlocked.includes(app.exe)}
+                                        className={`w-5 h-5 rounded border-slate-500 bg-slate-700 text-blue-500 focus:ring-0 focus:ring-offset-0 shrink-0 ${isLocked && currentlyBlocked.includes(app.exe) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     />
                                     {app.icon ? (
                                         <img src={app.icon} alt={app.name} className="w-8 h-8 object-contain shrink-0" />
