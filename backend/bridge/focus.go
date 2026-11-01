@@ -40,6 +40,7 @@ func (a *App) StartFocus(seconds int) error {
 	a.Store.Data.EmergencyUnlocksUsed = 0
 	a.Store.Data.GhostTaskName = taskName
 	a.Store.Data.GhostExePath = ghostExe
+	a.Store.Data.LastEnforcementError = ""
 	a.Store.UpdateBlockedStats(a.Store.Data.BlockedApps, seconds)
 
 	// **CRITICAL**: Save BEFORE spawning Ghost so it sees the correct LockEndTime
@@ -48,10 +49,11 @@ func (a *App) StartFocus(seconds int) error {
 	}
 
 	// 3. Enable Persistence (so reboot works)
-	_ = scheduler.EnablePersistence(ghostExe, taskName)
+	a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
 
 	// 4. Spawn the Ghost Process immediately (if not already running, schtasks /run is idempotent)
 	if err := spawnGhost(ghostExe, taskName); err != nil {
+		a.warnEnforcement("Enforcement process failed to start", err)
 		return err
 	}
 

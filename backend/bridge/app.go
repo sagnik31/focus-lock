@@ -77,15 +77,16 @@ func (a *App) Startup(ctx context.Context) {
 					if err == nil {
 						a.Store.Data.GhostTaskName = taskName
 						a.Store.Data.GhostExePath = ghostExe
+						a.Store.Data.LastEnforcementError = ""
 						a.Store.Save()
-						_ = scheduler.EnablePersistence(ghostExe, taskName)
-						_ = spawnGhost(ghostExe, taskName)
+						a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
+						a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
 					}
 				}
 			} else {
 				// Ghost was set up before (e.g., before reboot) but isn't running.
 				// Re-spawn it using the existing task.
-				_ = spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName)
+				a.warnEnforcement("Enforcement process failed to start", spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName))
 			}
 		}
 	}
@@ -99,4 +100,16 @@ func (a *App) GetConfig() storage.Config {
 	a.Store.Load()
 	sort.Strings(a.Store.Data.BlockedApps)
 	return a.Store.Data
+}
+
+// warnEnforcement records a user-visible warning when an enforcement setup
+// step fails, so the UI can tell the user that blocking may not be active.
+// A nil error is a no-op (it does not clear an existing warning; callers reset
+// LastEnforcementError to "" before a fresh attempt).
+func (a *App) warnEnforcement(context string, err error) {
+	if err == nil {
+		return
+	}
+	a.Store.Data.LastEnforcementError = context + ": " + err.Error()
+	_ = a.Store.Save()
 }

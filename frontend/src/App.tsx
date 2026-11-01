@@ -274,6 +274,7 @@ function App() {
                 emergencyUnlocksUsed={config.emergency_unlocks_used || 0}
                 onShowSettings={() => setFocusViewMode('settings')}
                 onQuit={handleQuit}
+                enforcementError={config.last_enforcement_error}
             />
         );
     }

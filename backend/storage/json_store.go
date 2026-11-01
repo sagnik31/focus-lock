@@ -24,6 +24,7 @@ type Config struct {
 	GhostExePath         string        `json:"ghost_exe_path"`     // Path to obfuscated executable
 	PausedUntil          time.Time     `json:"paused_until"`       // Emergency unlock expiry
 	EmergencyUnlocksUsed int           `json:"emergency_unlocks_used"`
+	LastEnforcementError string        `json:"last_enforcement_error"` // Non-empty when enforcement setup failed; surfaced as a UI warning
 }
 
 // Schedule represents a weekly time window for automatic locking

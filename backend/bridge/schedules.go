@@ -72,9 +72,10 @@ func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 			if err == nil {
 				a.Store.Data.GhostTaskName = taskName
 				a.Store.Data.GhostExePath = ghostExe
+				a.Store.Data.LastEnforcementError = ""
 				a.Store.Save()
-				_ = scheduler.EnablePersistence(ghostExe, taskName)
-				_ = spawnGhost(ghostExe, taskName)
+				a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
+				a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
 			}
 		}
 	}

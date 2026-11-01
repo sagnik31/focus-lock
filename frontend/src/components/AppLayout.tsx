@@ -186,6 +186,19 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     </div>
                 )}
 
+                {/* Enforcement Warning Banner */}
+                {config?.last_enforcement_error && (
+                    <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-3 rounded-xl flex items-start gap-3 backdrop-blur-sm text-sm shrink-0">
+                        <svg className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                            <p className="font-semibold text-amber-300">Enforcement warning</p>
+                            <p className="text-amber-200/80">{config.last_enforcement_error}</p>
+                        </div>
+                    </div>
+                )}
+
                 {/* Locked Mode Banner */}
                 {isLocked && (
                     <div className="mb-4 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 flex items-center justify-between backdrop-blur-sm shrink-0">
