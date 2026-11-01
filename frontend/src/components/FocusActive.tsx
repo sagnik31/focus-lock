@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { sysinfo } from "../../wailsjs/go/models";
-// @ts-ignore
 import { EmergencyUnlock } from "../../wailsjs/go/bridge/App";
 
 interface FocusActiveProps {
@@ -12,9 +11,10 @@ interface FocusActiveProps {
     isSchedule?: boolean;
     emergencyUnlocksUsed: number;
     onShowSettings?: () => void;
+    onQuit?: () => void;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
@@ -134,6 +134,18 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                         </svg>
                                         Add More to Block List
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Quit Button */}
+                            {onQuit && (
+                                <div className="pt-2">
+                                    <button
+                                        onClick={onQuit}
+                                        className="text-xs text-slate-600 hover:text-red-400 transition-colors uppercase tracking-widest font-bold"
+                                    >
+                                        Quit Session
                                     </button>
                                 </div>
                             )}

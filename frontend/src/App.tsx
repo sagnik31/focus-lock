@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
@@ -112,10 +112,8 @@ function App() {
     };
 
     const handleSaveApps = async (apps: string[]) => {
-        console.log("Saving apps:", apps);
         try {
             await SetBlockedApps(apps);
-            console.log("SetBlockedApps completed");
             refresh();
         } catch (err: any) {
             console.error("SetBlockedApps failed:", err);
@@ -136,6 +134,15 @@ function App() {
     const handleRemoveSite = async (url: string) => {
         try {
             await RemoveBlockedSite(url);
+            refresh();
+        } catch (err: any) {
+            setError(err.toString());
+        }
+    };
+
+    const handleQuit = async () => {
+        try {
+            await StopFocus();
             refresh();
         } catch (err: any) {
             setError(err.toString());
@@ -197,23 +204,11 @@ function App() {
     };
 
     const handleAddSites = (urls: string[]) => {
-        // @ts-ignore
-        if (window.go.bridge.App && window.go.bridge.App.AddBlockedSites) {
-            // @ts-ignore
-            window.go.bridge.App.AddBlockedSites(urls).then(() => {
-                refresh();
-            });
-        }
+        AddBlockedSites(urls).then(refresh).catch((err: any) => setError(err.toString()));
     };
 
     const handleRemoveSites = (urls: string[]) => {
-        // @ts-ignore
-        if (window.go.bridge.App && window.go.bridge.App.RemoveBlockedSites) {
-            // @ts-ignore
-            window.go.bridge.App.RemoveBlockedSites(urls).then(() => {
-                refresh();
-            });
-        }
+        RemoveBlockedSites(urls).then(refresh).catch((err: any) => setError(err.toString()));
     };
 
     if (isLocked && config) {
@@ -270,14 +265,15 @@ function App() {
 
         return (
             <FocusActive
-                endTime={effectiveEndTime}
-                blockedApps={config.blocked_apps}
+                endTime={activeScheduleEndTime?.toString() || config.lock_end_time}
+                blockedApps={config.blocked_apps || []}
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
                 pausedUntil={config.paused_until}
-                emergencyUnlocksUsed={config.emergency_unlocks_used}
-                isSchedule={!!activeScheduleEndTime && !(config.lock_end_time && new Date(config.lock_end_time) > new Date())}
+                isSchedule={!!activeScheduleEndTime}
+                emergencyUnlocksUsed={config.emergency_unlocks_used || 0}
                 onShowSettings={() => setFocusViewMode('settings')}
+                onQuit={handleQuit}
             />
         );
     }
