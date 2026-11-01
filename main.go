@@ -92,17 +92,6 @@ func main() {
 	// Keep handle open until process exits
 	// defer windows.CloseHandle(handle) // implied on exit
 
-	if len(os.Args) > 1 && os.Args[1] == "--test-spawn" {
-		app := bridge.NewApp()
-		fmt.Println("Starting focus for 1 minute (Headless Test)...")
-		if err := app.StartFocus(1); err != nil {
-			fmt.Println("Error starting focus:", err)
-		} else {
-			fmt.Println("Focus started successfully. Check for hidden process.")
-		}
-		return
-	}
-
 	// 2. UI Mode
 	app := bridge.NewApp()
 

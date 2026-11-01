@@ -20,9 +20,6 @@ var uninstallKeys = []struct {
 	{registry.CURRENT_USER, `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall`},
 }
 
-// 2. App Paths (Executables registered globally, e.g., "excel.exe")
-const appPathsKey = `SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths`
-
 // 3. Store Apps (User specific)
 const storeAppsKey = `Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages`
 
