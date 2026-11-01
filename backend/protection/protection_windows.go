@@ -60,7 +60,7 @@ func setCritical(enable bool) error {
 // enableDebugPrivilege enables the SeDebugPrivilege for the current process token.
 func enableDebugPrivilege() error {
 	var token windows.Token
-	p, _ := windows.GetCurrentProcess() // Pseudo handle
+	p := windows.CurrentProcess() // Pseudo handle
 	err := windows.OpenProcessToken(p, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
 	if err != nil {
 		return fmt.Errorf("OpenProcessToken failed: %w", err)
@@ -137,10 +137,7 @@ func setEntriesInAcl(countOfExplicitEntries uint32, listOfExplicitEntries *EXPLI
 func protectProcess() error {
 	// Get the current process handle.
 	// GetCurrentProcess returns a pseudo-handle (-1) which has MAXIMUM_ALLOWED permissions.
-	currentProcess, err := windows.GetCurrentProcess()
-	if err != nil {
-		return fmt.Errorf("failed to get current process: %w", err)
-	}
+	currentProcess := windows.CurrentProcess()
 
 	// 1. Get the current Security Descriptor (DACL)
 	// calling windows.GetSecurityInfo with the correct signature given the lint feedback

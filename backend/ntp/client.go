@@ -33,5 +33,5 @@ func GetOffset() (time.Duration, error) {
 	if err != nil {
 		return 0, err
 	}
-	return ntpTime.Sub(time.Now()), nil
+	return time.Until(ntpTime), nil
 }

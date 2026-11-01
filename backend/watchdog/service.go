@@ -5,6 +5,7 @@ import (
 	"focus-lock/backend/storage"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -460,7 +461,7 @@ func getFileMetadata(path string) (string, string) {
 
 		for _, code := range langCodes {
 			subBlock, _ := windows.UTF16PtrFromString(fmt.Sprintf("\\StringFileInfo\\%s\\%s", code, key))
-			var valPtr uintptr
+			var valPtr unsafe.Pointer
 			var valLen uint32
 			ret, _, _ = procVerQueryValueW.Call(
 				uintptr(unsafe.Pointer(&data[0])),
@@ -469,7 +470,9 @@ func getFileMetadata(path string) (string, string) {
 				uintptr(unsafe.Pointer(&valLen)),
 			)
 			if ret != 0 && valLen > 0 {
-				return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(valPtr)))
+				s := windows.UTF16PtrToString((*uint16)(valPtr))
+				runtime.KeepAlive(data)
+				return s
 			}
 		}
 		return ""

@@ -1,4 +1,5 @@
 build/
 node_modules
 frontend/dist
-focus-lock.exe
+*.exe
+frontend/package.json.md5

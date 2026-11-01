@@ -123,11 +123,9 @@ func (s *Store) loadInternal() error {
 			stored := string(sigData)
 			if computed != stored {
 				corrupt = true
-				// fmt.Println("Config TAMPERED: Signature mismatch") // Silence to prevent console window
 			}
 		} else {
 			corrupt = true // Missing signature counts as tamper
-			// fmt.Println("Config TAMPERED: Missing signature") // Silence
 		}
 
 		if !corrupt {
@@ -145,7 +143,6 @@ func (s *Store) loadInternal() error {
 			now := time.Now()
 			// If Registry has an active lock
 			if lockEnd.After(now) || remDur > 0 || (!pausedUntil.IsZero() && pausedUntil.After(now)) {
-				// fmt.Println("Restoring Config from Registry Backup...") // Silence
 				s.Data.LockEndTime = lockEnd
 				s.Data.RemainingDuration = remDur
 				s.Data.PausedUntil = pausedUntil

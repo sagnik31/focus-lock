@@ -53,7 +53,6 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocke
 
     const handleSave = () => {
         const appsToSave = Array.from(selected);
-        console.log("AppSelector saving:", appsToSave);
         onSave(appsToSave);
         onClose();
     };
