@@ -1,0 +1,17 @@
+#!/bin/sh
+# Focus Lock pre-push hook: build the app and refresh the desktop shortcut on
+# every push, so the shortcut always launches the newest build.
+#
+# Enable once with:  git config core.hooksPath scripts/hooks
+# Skip for one push:  git push --no-verify
+
+repo="$(git rev-parse --show-toplevel)" || exit 0
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo/scripts/deploy.ps1"
+status=$?
+
+if [ "$status" -ne 0 ]; then
+	echo "pre-push: build/deploy failed; push aborted. Use 'git push --no-verify' to push anyway." 1>&2
+fi
+
+exit $status

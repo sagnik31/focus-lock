@@ -3,11 +3,11 @@
 **Focus Lock** is a high-security application and website blocker for Windows. It enforces self-imposed restrictions that cannot be bypassed during active sessions.
 
 > [!WARNING]
-> **USE AT YOUR OWN RISK.** This application marks itself as a Critical Process. Forcefully terminating it during an active session **will cause a Blue Screen of Death (BSOD)** and potential data loss.
+> **USE AT YOUR OWN RISK.** This application terminates processes and edits the system `hosts` file during active sessions.
 
 ## Key Features
 
-- **Unstoppable Sessions**: Once initiated, sessions cannot be cancelled. The process is protected via `RtlSetProcessIsCritical`.
+- **Unstoppable Sessions**: Once initiated, sessions cannot be cancelled. The enforcement process denies `PROCESS_TERMINATE` to other users, and if it is killed it is relaunched automatically — within a minute by the scheduled task, or immediately if the app is open — with the lock still in force. Killing it does not end the session.
 - **Scheduled Blocking**: Configure recurring schedules (e.g., weekdays 9:00-17:00) that automatically enforce blocking without manual intervention.
 - **Website Blocking**: Modifies the Windows Hosts file to block domains system-wide. Works across all browsers including Incognito/Private modes.
 - **Category Presets**: One-click blocking for Social Media, Entertainment, Gaming, and Adult content.
@@ -38,8 +38,16 @@ The binary is generated at `build/bin/focus-lock.exe`.
 For website blocking and persistent enforcement, run this **once** in an elevated PowerShell:
 
 ```powershell
-schtasks /create /tn "FocusLockGhost" /tr "`"$env:APPDATA\FocusLock\Bin\FocusLockGhost.exe`" --enforce" /sc ONLOGON /rl HIGHEST /f
+$action    = New-ScheduledTaskAction -Execute "$env:APPDATA\FocusLock\Bin\FocusLockGhost.exe" -Argument "--enforce"
+$trigger   = New-ScheduledTaskTrigger -AtLogOn
+$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
+Register-ScheduledTask -TaskName "FocusLockGhost" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
 ```
+
+The power settings matter: by default Task Scheduler kills a task when the laptop switches to
+battery (and after 72 hours), which would silently stop enforcement. Re-run this command if you
+registered the task with an older `schtasks /create` line.
 
 This creates a scheduled task that runs the Ghost process with admin privileges. After this setup:
 - Website blocking works without UAC prompts
@@ -87,9 +95,9 @@ To launch the UI without UAC prompts:
 - **Enforcement**:
   - **Process Termination**: `CreateToolhelp32Snapshot` + `TerminateProcess` with dual-loop architecture
   - **Network Blocking**: Modifies `C:\Windows\System32\drivers\etc\hosts`
-  - **Critical Process**: Kernel panic on unexpected termination
+  - **Tamper Resistance**: Process DACL denies `PROCESS_TERMINATE`; the scheduled task's 1-minute repetition trigger relaunches a killed enforcer with the lock state intact
 
 ## Disclaimer
 
-This software alters critical system process states. The developers are not responsible for data loss, system instability, or inability to access blocked resources during active sessions. **Focus wisely.**
+This software terminates other processes and modifies system files. The developers are not responsible for data loss, system instability, or inability to access blocked resources during active sessions. **Focus wisely.**
 

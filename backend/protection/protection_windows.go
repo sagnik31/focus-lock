@@ -4,101 +4,15 @@ package protection
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
 var (
-	modadvapi32                 = windows.NewLazySystemDLL("advapi32.dll")
-	modntdll                    = windows.NewLazySystemDLL("ntdll.dll")
-	procSetEntriesInAclW        = modadvapi32.NewProc("SetEntriesInAclW")
-	procRtlSetProcessIsCritical = modntdll.NewProc("RtlSetProcessIsCritical")
+	modadvapi32          = windows.NewLazySystemDLL("advapi32.dll")
+	procSetEntriesInAclW = modadvapi32.NewProc("SetEntriesInAclW")
 )
-
-// setCritical implements the Windows-specific logic.
-func setCritical(enable bool) error {
-	// Debug logging helper
-	logErr := func(msg string) {
-		configDir, _ := os.UserConfigDir()
-		logPath := filepath.Join(configDir, "FocusLock", "protection_error.log")
-		_ = os.MkdirAll(filepath.Dir(logPath), 0755)
-		f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		defer f.Close()
-		f.WriteString(fmt.Sprintf("%s: %s\n", time.Now().Format(time.RFC3339), msg))
-	}
-
-	// 1. Enable SeDebugPrivilege
-	if err := enableDebugPrivilege(); err != nil {
-		logErr(fmt.Sprintf("Failed to enable SeDebugPrivilege: %v", err))
-		return fmt.Errorf("failed to enable SeDebugPrivilege: %w", err)
-	}
-
-	// 2. Call RtlSetProcessIsCritical
-	// NTSTATUS RtlSetProcessIsCritical(BOOLEAN NewValue, PBOOLEAN OldValue, BOOLEAN CheckFlag);
-	// CheckFlag = false is usually required? Some sources say false.
-	var newVal uintptr
-	if enable {
-		newVal = 1
-	} else {
-		newVal = 0
-	}
-
-	r1, _, _ := procRtlSetProcessIsCritical.Call(newVal, 0, 0)
-	// r1 is NTSTATUS. 0 is STATUS_SUCCESS.
-	if r1 != 0 {
-		logErr(fmt.Sprintf("RtlSetProcessIsCritical failed with NTSTATUS: 0x%x", r1))
-		return fmt.Errorf("RtlSetProcessIsCritical failed with NTSTATUS: 0x%x", r1)
-	}
-
-	return nil
-}
-
-// enableDebugPrivilege enables the SeDebugPrivilege for the current process token.
-func enableDebugPrivilege() error {
-	var token windows.Token
-	p := windows.CurrentProcess() // Pseudo handle
-	err := windows.OpenProcessToken(p, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
-	if err != nil {
-		return fmt.Errorf("OpenProcessToken failed: %w", err)
-	}
-	defer token.Close()
-
-	var luid windows.LUID
-	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeDebugPrivilege"), &luid)
-	if err != nil {
-		return fmt.Errorf("LookupPrivilegeValue failed: %w", err)
-	}
-
-	tp := windows.Tokenprivileges{
-		PrivilegeCount: 1,
-		Privileges: [1]windows.LUIDAndAttributes{
-			{
-				Luid:       luid,
-				Attributes: windows.SE_PRIVILEGE_ENABLED,
-			},
-		},
-	}
-
-	// AdjustTokenPrivileges
-	// We need to unsafe cast to pass the pointer locally, as x/sys wrapper signature might vary or be strict
-	// x/sys/windows.AdjustTokenPrivileges takes *Tokenprivileges
-	err = windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
-	if err != nil {
-		return fmt.Errorf("AdjustTokenPrivileges failed: %w", err)
-	}
-
-	// AdjustTokenPrivileges can return nil error even if it failed to adjust all.
-	// We should check GetLastError via err, but Go handles this?
-	// The doc says: "If the function succeeds, the return value is nonzero. To determine whether the function adjusted all of the specified privileges, call GetLastError..."
-	// windows.AdjustTokenPrivileges wraps this. It returns error if the call failed OR if GetLastError == ERROR_NOT_ALL_ASSIGNED (in typical wrappers).
-	// Let's assume it works if err == nil for now.
-
-	return nil
-}
 
 // TRUSTEE_W structure matches the Windows API definition.
 // We define it locally to avoid mismatches or missing fields in the x/sys/windows package if valid.

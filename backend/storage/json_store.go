@@ -137,26 +137,32 @@ func (s *Store) loadInternal() error {
 	}
 
 	// 3. Redundancy / Restore Logic
-	// If file is missing OR corrupt, check Registry
+	// If the file is missing or corrupt, recover without losing the block lists.
 	if fileMissing || corrupt {
+		// 3a. Prefer the full signed backup. It restores the ENTIRE config,
+		//     including blocked apps/sites, so an unclean shutdown can no longer
+		//     leave an active lock that enforces nothing. Heal the primary file
+		//     immediately so the next load reads it cleanly. saveInternal does not
+		//     take the lock (we already hold it), so calling it here is safe.
+		if s.restoreFromBackup() {
+			_ = s.saveInternal()
+			return nil
+		}
+
+		// 3b. Last resort: the registry keeps the lock timing (so the lock can't be
+		//     escaped by deleting files) but not the block lists. Restore the timing
+		//     and, if we have no block lists to enforce, surface a warning instead of
+		//     silently presenting a fully-configured session that does nothing.
 		lockEnd, remDur, pausedUntil, regErr := s.regStore.LoadBackup()
 		if regErr == nil {
 			now := time.Now()
-			// If Registry has an active lock
 			if lockEnd.After(now) || remDur > 0 || (!pausedUntil.IsZero() && pausedUntil.After(now)) {
 				s.Data.LockEndTime = lockEnd
 				s.Data.RemainingDuration = remDur
 				s.Data.PausedUntil = pausedUntil
-				// Force Save to restore the file
-				// We need to unlock first because Save locks - BUT we are in internal load?
-				// Actually Save() locks, so we cannot call it from here if we hold lock.
-				// We should save AFTER returning from load if needed, or implement saveInternal.
-				// For now, let's just populate Data and let the caller handle save if appropriate,
-				// OR better, we trust the registry data and subsequent saves will write it.
-				// However, the original code did: s.mu.Unlock(); s.Save(); s.mu.Lock();
-				// This is dangerous if loadInternal is called from UpdateAtomic.
-				// CORRECT FIX: Do NOT save here. Just load into memory.
-				// The next Save() call will persist it to disk.
+				if len(s.Data.BlockedApps) == 0 && len(s.Data.BlockedSites) == 0 {
+					s.Data.LastEnforcementError = "Block lists could not be recovered after an unclean shutdown. Please re-add your blocked apps and sites."
+				}
 				return nil
 			}
 		}
@@ -200,20 +206,88 @@ func (s *Store) saveInternal() error {
 	if err != nil {
 		return err
 	}
-
-	// 1. Save Config File
-	if err := os.WriteFile(s.filePath, data, 0644); err != nil {
-		return err
-	}
-
-	// 2. Save HMAC Signature
 	sig := s.computeHMAC(data)
-	if err := os.WriteFile(s.filePath+".sig", []byte(sig), 0644); err != nil {
+
+	// 1. Write config + signature atomically (temp file + rename). A crash or
+	//    power loss mid-write can then never leave a truncated/half-written
+	//    config.json. Without this, an unclean shutdown corrupts the file, the
+	//    next load falls back to the timing-only registry backup, and the block
+	//    lists are lost while the lock still shows active.
+	if err := atomicWrite(s.filePath, data); err != nil {
+		return err
+	}
+	if err := atomicWrite(s.filePath+".sig", []byte(sig)); err != nil {
 		return err
 	}
 
-	// 3. Save to Registry (Redundancy)
+	// 2. Full redundant backup (config + its signature). Written after the
+	//    primary so it always holds a complete, verifiable config. Recovery
+	//    restores the WHOLE config from here — block lists included, not just the
+	//    lock timing — so we never resume with an active lock that blocks nothing.
+	_ = atomicWrite(s.filePath+".bak", data)
+	_ = atomicWrite(s.filePath+".bak.sig", []byte(sig))
+
+	// 3. Registry backup of lock timing (survives even if the files are deleted,
+	//    so the lock itself can't be escaped by removing config.json).
 	return s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration, s.Data.PausedUntil)
+}
+
+// atomicWrite writes data to a temp file in the same directory, flushes it to
+// disk, and renames it over path. os.Rename replaces the destination atomically
+// on Windows (MoveFileEx with MOVEFILE_REPLACE_EXISTING), so a reader — or a
+// crash — always sees either the old complete file or the new complete file,
+// never a partial one.
+func atomicWrite(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+	return nil
+}
+
+// restoreFromBackup loads the full config from the signed .bak file written on
+// each successful save. It returns true only if a backup with a matching HMAC
+// signature was found and parsed, so a stale pre-signature backup or a tampered
+// one is ignored.
+func (s *Store) restoreFromBackup() bool {
+	bdata, err := os.ReadFile(s.filePath + ".bak")
+	if err != nil {
+		return false
+	}
+	bsig, err := os.ReadFile(s.filePath + ".bak.sig")
+	if err != nil {
+		return false
+	}
+	if s.computeHMAC(bdata) != string(bsig) {
+		return false
+	}
+	var restored Config
+	if err := json.Unmarshal(bdata, &restored); err != nil {
+		return false
+	}
+	s.Data = restored
+	return true
 }
 
 func (s *Store) computeHMAC(data []byte) string {

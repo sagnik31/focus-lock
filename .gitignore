@@ -3,3 +3,6 @@ node_modules
 frontend/dist
 *.exe
 frontend/package.json.md5
+
+# Local agent handover notes — keep out of version control
+HANDOVER.md

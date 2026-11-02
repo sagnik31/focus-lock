@@ -54,8 +54,12 @@ func (a *App) Startup(ctx context.Context) {
 			a.Store.Data.GhostExePath = ""
 			a.Store.Save()
 		}
-	} else if hasEnabledSchedules {
-		// Check if Ghost is actually running (it may have exited or never started after reboot)
+	} else {
+		// There is something to enforce now (an active manual lock or an active
+		// schedule) or an enabled schedule that will fire later. Make sure the Ghost
+		// is running. This is the immediate-recovery path when the UI is open: if the
+		// Ghost was killed, we relaunch it here instead of waiting up to a minute for
+		// the scheduled task's repetition trigger to do it.
 		ghostRunning := isGhostProcessRunning()
 
 		if !ghostRunning {

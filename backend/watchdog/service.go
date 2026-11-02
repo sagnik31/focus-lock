@@ -220,30 +220,17 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 					store.Save()
 				}
 
-				// If we are the Ghost process, check if we should exit.
-				// Only exit if there's NO manual lock AND NO enabled schedules at all.
-				// (If schedules exist, we stay alive to enforce them when they become active)
-				if isGhost {
-					hasEnabledSchedules := false
-					for _, s := range store.Data.Schedules {
-						if s.Enabled {
-							hasEnabledSchedules = true
-							break
-						}
-					}
+				// The Ghost stays resident even when idle. It does NOT exit here.
+				//
+				// Exiting when idle used to be fine, but the scheduled task now has a
+				// 1-minute repetition trigger (so a killed Ghost is relaunched within a
+				// minute, which is what makes killing it pointless rather than a bypass).
+				// If the Ghost exited whenever idle, that repetition would relaunch it and
+				// it would exit again every single minute forever. Staying resident makes
+				// the repeat a no-op (the single-instance mutex is held) and lets the Ghost
+				// pick up the next manual lock or schedule window immediately. An idle
+				// Ghost is cheap: the loop just re-checks state and enforces nothing.
 
-					manualLockPresent := !store.Data.LockEndTime.IsZero()
-
-					if !manualLockPresent && !hasEnabledSchedules {
-						debugLog("Nothing to enforce and no schedules. Ghost process exiting.")
-						// NOTE: We intentionally do NOT delete the scheduled task here.
-						// The task should persist so that future manual/scheduled sessions
-						// work without re-running the admin setup script.
-						protection.SetCritical(false)
-						os.Exit(0)
-					}
-					// Otherwise, Ghost stays alive waiting for next schedule window
-				}
 			}
 		}
 	}

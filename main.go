@@ -54,16 +54,9 @@ func main() {
 		f.WriteString(fmt.Sprintf("Ghost started at %s with PID %d\n", time.Now().Format(time.RFC3339), os.Getpid()))
 		f.Close()
 
-		// Enable Critical Process Status (BSOD if killed)
-		if err := protection.SetCritical(true); err != nil {
-			fmt.Printf("Failed to set critical status: %v\n", err)
-		} else {
-			// CRITICAL: Ensure we disable it if we exit gracefully
-			// This prevents BSOD when the valid timer expires and we exit.
-			defer func() {
-				protection.SetCritical(false)
-			}()
-		}
+		// NOTE: The Ghost is deliberately NOT a critical process. Marking it critical
+		// (RtlSetProcessIsCritical) bugchecked Windows (0xEF) whenever anything else
+		// ended it: Task Scheduler on AC power loss, shutdown/restart, sign-out.
 
 		store.Load()
 		watchdog.StartEnforcer(store, true)
