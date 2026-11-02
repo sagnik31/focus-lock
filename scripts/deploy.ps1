@@ -26,7 +26,11 @@ $built = Join-Path $repoRoot 'build\bin\focus-lock.exe'
 if (-not (Test-Path $built)) { throw "Build output not found: $built" }
 
 # --- Stable deploy location the shortcut points at ---
-$deployDir = Join-Path $env:LOCALAPPDATA 'FocusLock'
+# %APPDATA%\FocusLock, not %LOCALAPPDATA%: this folder already carries the
+# Defender exclusion from the one-time setup (it holds the Ghost), so the UI exe
+# isn't quarantined here. A previous %LOCALAPPDATA%\FocusLock build was removed
+# by Defender within minutes because that path wasn't excluded.
+$deployDir = Join-Path $env:APPDATA 'FocusLock'
 $deployExe = Join-Path $deployDir 'focus-lock.exe'
 New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 
