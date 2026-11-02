@@ -70,4 +70,16 @@ $sc.IconLocation = "$deployExe,0"
 $sc.Save()
 Write-Host "[deploy] Shortcut    -> $lnk" -ForegroundColor Green
 
+# 4. Remove stale Focus Lock desktop shortcuts from older setups (e.g. one
+#    pointing straight at build\bin\focus-lock.exe), keeping only the canonical
+#    "Focus Lock.lnk" above, so the desktop doesn't accumulate duplicates.
+Get-ChildItem -Path $desktop -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.FullName -ieq $lnk) { return }
+    try { $target = $ws.CreateShortcut($_.FullName).TargetPath } catch { return }
+    if ($target -and ([System.IO.Path]::GetFileName($target) -ieq 'focus-lock.exe')) {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+        Write-Host "[deploy] Removed stale shortcut -> $($_.Name)" -ForegroundColor Yellow
+    }
+}
+
 Write-Host "[deploy] Done. UI is live now; enforcer changes apply after a reboot." -ForegroundColor Cyan
