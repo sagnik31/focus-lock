@@ -30,9 +30,21 @@ func SetupGhostExecutable(originalPath, taskName string) (string, error) {
 	newExeName := taskName + ".exe"
 	newPath := filepath.Join(binDir, newExeName)
 
-	// Copy file
+	// Copy file. A Ghost left running (e.g. started at boot by the scheduled
+	// task) holds its exe, so it can't be overwritten: rename it aside (a running
+	// exe can be renamed) and copy the new build in place, like deploy.ps1. If
+	// even that fails, the existing exe is the same app, so reuse it.
 	if err := copyFile(originalPath, newPath); err != nil {
-		return "", fmt.Errorf("failed to copy executable: %w", err)
+		if _, statErr := os.Stat(newPath); statErr != nil {
+			return "", fmt.Errorf("failed to copy executable: %w", err)
+		}
+		oldPath := newPath + ".old"
+		_ = os.Remove(oldPath)
+		if os.Rename(newPath, oldPath) == nil && copyFile(originalPath, newPath) != nil {
+			// Renamed aside but the copy failed: put the old exe back
+			_ = os.Remove(newPath)
+			_ = os.Rename(oldPath, newPath)
+		}
 	}
 
 	return newPath, nil
