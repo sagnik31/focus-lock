@@ -12,7 +12,9 @@ func spawnGhost(exePath, taskName string) error {
 	// 1. Try to launch via Scheduled Task (for Admin privileges without UAC)
 	// This only works if the task was created previously (e.g. by installer or Admin setup).
 	// We use "schtasks /run" which doesn't trigger UAC if the task is already set up.
-	if err := exec.Command("schtasks", "/run", "/tn", taskName).Run(); err == nil {
+	runCmd := exec.Command("schtasks", "/run", "/tn", taskName)
+	runCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW; schtasks is console
+	if err := runCmd.Run(); err == nil {
 		fmt.Println("Ghost spawned via Scheduled Task (Admin Mode).")
 		return nil
 	}

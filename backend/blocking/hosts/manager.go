@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -75,14 +74,22 @@ func Block(domains []string) error {
 	// Append block to clean lines
 	finalContent := strings.Join(append(newLines, block...), "\n")
 
+	// Nothing changed. The enforcer calls this on its polling loop, so in the
+	// steady state the hosts file already holds exactly this block; skip the
+	// write and the DNS flush instead of rewriting the system file every few
+	// seconds (and launching ipconfig every few seconds).
+	if finalContent == string(content) {
+		return nil
+	}
+
 	// Write back
 	// Atomic write is hard with system files because of permissions/attributes, so strictly truncate and write.
 	if err := os.WriteFile(hostsPath, []byte(finalContent), 0644); err != nil {
 		return err
 	}
 
-	// Flush DNS Cache
-	_ = exec.Command("ipconfig", "/flushdns").Run()
+	// Flush DNS Cache (hidden window; see flushDNS)
+	flushDNS()
 	return nil
 }
 
@@ -120,12 +127,21 @@ func Unblock() error {
 	}
 
 	finalContent := strings.Join(newLines, "\n")
+
+	// No Focus Lock block was present, so there is nothing to remove. Skip the
+	// write and the DNS flush: when the enforcer is idle it calls Unblock on
+	// every slow tick, and without this guard that launched ipconfig (a console
+	// program, so a window flashed) every few seconds for no reason.
+	if finalContent == string(content) {
+		return nil
+	}
+
 	if err := os.WriteFile(hostsPath, []byte(finalContent), 0644); err != nil {
 		return err
 	}
 
-	// Flush DNS Cache
-	_ = exec.Command("ipconfig", "/flushdns").Run()
+	// Flush DNS Cache (hidden window; see flushDNS)
+	flushDNS()
 	return nil
 }
 
