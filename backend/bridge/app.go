@@ -48,10 +48,21 @@ func (a *App) Startup(ctx context.Context) {
 	if !manualActive && !scheduleActive && !hasEnabledSchedules {
 		// No active lock and no enabled schedules. Force cleanup.
 		_ = hosts.Unblock()
+		save := false
+		// Nothing is being enforced, so any enforcement warning is stale (it was
+		// written during a past session). Clear it, otherwise the UI keeps showing
+		// a leftover banner between sessions even though nothing is wrong now.
+		if a.Store.Data.LastEnforcementError != "" {
+			a.Store.Data.LastEnforcementError = ""
+			save = true
+		}
 		if a.Store.Data.GhostTaskName != "" {
 			_ = scheduler.DisablePersistence(a.Store.Data.GhostTaskName)
 			a.Store.Data.GhostTaskName = ""
 			a.Store.Data.GhostExePath = ""
+			save = true
+		}
+		if save {
 			a.Store.Save()
 		}
 	} else {

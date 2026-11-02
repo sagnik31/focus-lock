@@ -34,14 +34,21 @@ $deployDir = Join-Path $env:APPDATA 'FocusLock'
 $deployExe = Join-Path $deployDir 'focus-lock.exe'
 New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 
-# 1. Update the UI executable. If the app is open it holds the file; that's not
-#    fatal — it will update on the next push after the app is closed.
+# 1. Update the UI executable. If the app is open it holds the file, so rename
+#    the old one aside (a running exe can be renamed but not overwritten) and
+#    drop the new build in place; the next launch picks it up. The stale .old is
+#    cleaned up on the following deploy once the handle is released.
 try {
+    if (Test-Path $deployExe) {
+        $oldUi = "$deployExe.old"
+        Remove-Item $oldUi -Force -ErrorAction SilentlyContinue
+        Rename-Item $deployExe $oldUi -ErrorAction Stop
+    }
     Copy-Item $built $deployExe -Force
     Write-Host "[deploy] UI updated  -> $deployExe" -ForegroundColor Green
 }
 catch {
-    Write-Warning "Could not replace $deployExe (is Focus Lock open?). It will update on the next push once the app is closed."
+    Write-Warning "Could not update $deployExe; it will refresh on the next deploy."
 }
 
 # 2. Stage the newest enforcer. The running Ghost holds its own exe, so rename
