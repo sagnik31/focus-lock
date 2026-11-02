@@ -83,7 +83,12 @@ func (a *App) Startup(ctx context.Context) {
 						a.Store.Data.GhostExePath = ghostExe
 						a.Store.Data.LastEnforcementError = ""
 						a.Store.Save()
-						a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
+						// Only (re-)register when a correct task isn't already
+						// installed: the non-elevated UI can't overwrite one, so
+						// attempting it would just fail with "Access is denied".
+						if !scheduler.PersistenceCurrent(ghostExe, taskName) {
+							a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
+						}
 						a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
 					}
 				}

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -86,7 +87,54 @@ func EnablePersistence(exePath, taskName string) error {
 		return err
 	}
 
-	return exec.Command("schtasks", "/create", "/tn", taskName, "/xml", f.Name(), "/f").Run()
+	// Capture stderr so a failure reports schtasks's actual message (e.g.
+	// "ERROR: Access is denied." when the UI isn't elevated) instead of a bare
+	// "exit status 1". Registering a HighestAvailable task needs an elevated
+	// process; see scripts/setup_persistence.ps1 for the one-time admin setup.
+	cmd := exec.Command("schtasks", "/create", "/tn", taskName, "/xml", f.Name(), "/f")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if runErr := cmd.Run(); runErr != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return fmt.Errorf("%s (%w)", msg, runErr)
+		}
+		return runErr
+	}
+	return nil
+}
+
+// PersistenceCurrent reports whether a scheduled task named taskName already
+// exists with the definition we need: it runs the given enforcer exe, is
+// battery-safe (does not stop when the machine switches to battery), and
+// carries the 1-minute repetition that relaunches a killed enforcer.
+//
+// It returns false when the task is missing, outdated (e.g. an older build's
+// task that stops on battery and has no repetition), or unreadable, so the
+// caller re-registers it. When it returns true the caller can skip
+// registration: this lets a non-elevated UI avoid a doomed "/create" that would
+// fail with "Access is denied" on every launch and session — nagging the user —
+// when a correct task (installed once via scripts/setup_persistence.ps1 or an
+// elevated run) is already in place.
+func PersistenceCurrent(exePath, taskName string) bool {
+	if taskName == "" {
+		return false
+	}
+	// schtasks returns non-zero (and Output errors) when the task is missing.
+	out, err := exec.Command("schtasks", "/query", "/tn", taskName, "/xml").Output()
+	if err != nil {
+		return false
+	}
+	x := strings.ToLower(string(out))
+	// Pre-fix tasks stop on battery and have no repetition trigger.
+	if !strings.Contains(x, "<stopifgoingonbatteries>false</stopifgoingonbatteries>") {
+		return false
+	}
+	if !strings.Contains(x, "<repetition>") {
+		return false
+	}
+	// The action must point at the current enforcer exe, so a task left over
+	// from a different install path is refreshed rather than trusted.
+	return strings.Contains(x, strings.ToLower(exePath))
 }
 
 // DisablePersistence removes the task.

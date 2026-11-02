@@ -74,7 +74,11 @@ func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 				a.Store.Data.GhostExePath = ghostExe
 				a.Store.Data.LastEnforcementError = ""
 				a.Store.Save()
-				a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
+				// Skip re-registration when a correct task already exists; the
+				// non-elevated UI can't overwrite it (would be "Access is denied").
+				if !scheduler.PersistenceCurrent(ghostExe, taskName) {
+					a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
+				}
 				a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
 			}
 		}

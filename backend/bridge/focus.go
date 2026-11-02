@@ -48,8 +48,12 @@ func (a *App) StartFocus(seconds int) error {
 		return err
 	}
 
-	// 3. Enable Persistence (so reboot works)
-	a.warnEnforcement("Reboot persistence could not be configured", scheduler.EnablePersistence(ghostExe, taskName))
+	// 3. Enable Persistence (so reboot works). Skip when a correct task is
+	//    already installed — the non-elevated UI can't overwrite one, so
+	//    re-registering would only fail with "Access is denied" every session.
+	if !scheduler.PersistenceCurrent(ghostExe, taskName) {
+		a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
+	}
 
 	// 4. Spawn the Ghost Process immediately (if not already running, schtasks /run is idempotent)
 	if err := spawnGhost(ghostExe, taskName); err != nil {
