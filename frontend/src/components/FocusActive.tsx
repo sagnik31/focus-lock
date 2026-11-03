@@ -151,8 +151,10 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                 </div>
                             )}
 
-                            {/* Quit Button */}
-                            {onQuit && (
+                            {/* Quit Button — only once the lock has expired.
+                                An active lock cannot be ended early; the
+                                enforcer refuses it, so we don't offer it. */}
+                            {onQuit && timeLeft <= 0 && (
                                 <div className="pt-2">
                                     <button
                                         onClick={onQuit}

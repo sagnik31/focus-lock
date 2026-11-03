@@ -51,7 +51,22 @@ type Store struct {
 	Data         Config
 	regStore     *RegistryStore
 	activeSecret []byte
+
+	// strong is true once the admin setup has provisioned the HKLM secret.
+	// canSign is true when this process holds the secret and may therefore
+	// write (sign) the config: always true in reduced mode, but true in strong
+	// mode only for the elevated Ghost. A strong-mode UI has canSign=false and
+	// must route every change through the request channel.
+	strong  bool
+	canSign bool
 }
+
+// CanSign reports whether this process may write the config directly. When
+// false (strong-mode UI), callers must use SubmitRequest instead of Save.
+func (s *Store) CanSign() bool { return s.canSign }
+
+// StrongMode reports whether the HKLM secret has been provisioned.
+func (s *Store) StrongMode() bool { return s.strong }
 
 func NewStore() (*Store, error) {
 	configDir, err := os.UserConfigDir()
@@ -77,14 +92,13 @@ func NewStore() (*Store, error) {
 		regStore: NewRegistryStore(),
 	}
 
-	// Initialize Secret for HMAC
-	secret, err := store.regStore.GetOrCreateSecret()
-	if err != nil {
-		// Fallback to memory-only secret if registry fails (unlikely)
-		secret = make([]byte, 32)
-		// We log or ignore, but better to proceed than crash
-	}
+	// Resolve the HMAC secret and operating mode. In strong mode the UI gets
+	// no secret (canSign=false) and reads the config without verifying it; the
+	// elevated Ghost gets the secret and is the sole signer.
+	secret, strong, canSign := store.regStore.ResolveSecret()
 	store.activeSecret = secret
+	store.strong = strong
+	store.canSign = canSign
 
 	return store, nil
 }
@@ -114,6 +128,16 @@ func (s *Store) loadInternal() error {
 
 	fileMissing := os.IsNotExist(err)
 	corrupt := false
+
+	// Strong-mode UI: no secret to verify with, and it must never heal/sign
+	// the file. Read it unverified for display only; the elevated Ghost is the
+	// authority that verifies, heals and signs the config.
+	if !s.canSign {
+		if err == nil {
+			_ = json.Unmarshal(data, &s.Data)
+		}
+		return nil
+	}
 
 	if err == nil {
 		// 2. Verify Signature
@@ -201,7 +225,30 @@ func (s *Store) Save() error {
 	return s.saveInternal()
 }
 
+// ApplyRequest is the Ghost's authoritative entry point for a UI operation.
+// It reloads the latest config, runs the shared policy (refusing anything that
+// would weaken an active lock), and signs+saves if allowed. The returned error
+// is the policy verdict, relayed to the UI through the result file.
+func (s *Store) ApplyRequest(op Operation, now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_ = s.loadInternal()
+	if err := ApplyOperation(&s.Data, op, now); err != nil {
+		return err
+	}
+	return s.saveInternal()
+}
+
 func (s *Store) saveInternal() error {
+	// In strong mode only the elevated Ghost (which holds the secret) may
+	// write the config. A UI save here would be unsigned garbage, so refuse it
+	// — the UI must go through SubmitRequest instead. This is a safety net;
+	// the bridge should never call Save in strong mode.
+	if !s.canSign {
+		return errorString("config is read-only in this process; use the request channel")
+	}
+
 	data, err := json.MarshalIndent(s.Data, "", "  ")
 	if err != nil {
 		return err

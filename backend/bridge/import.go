@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/sysinfo"
-	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -86,47 +85,54 @@ func (a *App) ImportSettings(jsonContent string) error {
 		installedApps = []sysinfo.AppInfo{} // Continue without matching if error
 	}
 
-	// Merge blocked apps (avoid duplicates) with fuzzy matching
+	// Resolve + dedupe apps against the current list (case-insensitive).
 	existingApps := make(map[string]bool)
 	for _, app := range a.Store.Data.BlockedApps {
 		existingApps[strings.ToLower(app)] = true
 	}
+	newApps := []string{}
 	for _, app := range importData.Blocked.Apps {
 		resolvedApp := resolveAppName(app, installedApps)
-		if !existingApps[strings.ToLower(resolvedApp)] {
-			a.Store.Data.BlockedApps = append(a.Store.Data.BlockedApps, resolvedApp)
-			existingApps[strings.ToLower(resolvedApp)] = true
+		key := strings.ToLower(resolvedApp)
+		if !existingApps[key] {
+			newApps = append(newApps, resolvedApp)
+			existingApps[key] = true
 		}
 	}
-	sort.Strings(a.Store.Data.BlockedApps)
 
-	// Merge blocked sites (avoid duplicates)
+	// Dedupe sites against the current list.
 	existingSites := make(map[string]bool)
 	for _, site := range a.Store.Data.BlockedSites {
 		existingSites[site] = true
 	}
+	newSites := []string{}
 	for _, site := range importData.Blocked.Sites {
 		if !existingSites[site] {
-			a.Store.Data.BlockedSites = append(a.Store.Data.BlockedSites, site)
+			newSites = append(newSites, site)
 			existingSites[site] = true
 		}
 	}
-	sort.Strings(a.Store.Data.BlockedSites)
 
-	// Convert and append schedules
+	// Convert schedules.
+	newSchedules := make([]storage.Schedule, 0, len(importData.Schedules))
 	for _, importSched := range importData.Schedules {
-		schedule := storage.Schedule{
+		newSchedules = append(newSchedules, storage.Schedule{
 			ID:        uuid.New().String(),
 			Name:      importSched.Name,
 			Days:      importSched.ActiveDays, // Map activeDays -> days
 			StartTime: importSched.StartTime,
 			EndTime:   importSched.EndTime,
 			Enabled:   true, // Enable by default
-		}
-		a.Store.Data.Schedules = append(a.Store.Data.Schedules, schedule)
+		})
 	}
 
-	return a.Store.Save()
+	// Import is append-only, so the policy always allows it, even mid-lock.
+	return a.applyOp(storage.Operation{
+		Type:      storage.OpImport,
+		Apps:      newApps,
+		Sites:     newSites,
+		Schedules: newSchedules,
+	})
 }
 
 // ExportSettings exports current settings to JSON format for sharing

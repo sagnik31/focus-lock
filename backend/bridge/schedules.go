@@ -1,13 +1,10 @@
 package bridge
 
 import (
-	"errors"
 	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
-	"focus-lock/backend/watchdog"
 	"os"
-	"time"
 )
 
 // GetSchedules returns all schedules
@@ -19,38 +16,11 @@ func (a *App) GetSchedules() []storage.Schedule {
 	return a.Store.Data.Schedules
 }
 
-// SaveSchedules saves schedules and spawns Ghost if needed
+// SaveSchedules saves schedules and spawns Ghost if needed. The lock-integrity
+// rules (no deleting/disabling an active schedule during enforcement) are
+// enforced by the policy — in strong mode, inside the elevated Ghost.
 func (a *App) SaveSchedules(schedules []storage.Schedule) error {
-	a.Store.Load()
-
-	// Check for active session
-	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
-	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
-	isLocked := manualActive || scheduleActive
-
-	if isLocked {
-		// Identify disabled or deleted schedules that were previously enabled
-		newScheduleMap := make(map[string]storage.Schedule)
-		for _, s := range schedules {
-			newScheduleMap[s.ID] = s
-		}
-
-		for _, oldSch := range a.Store.Data.Schedules {
-			if oldSch.Enabled {
-				// Check if it exists and is still enabled
-				newSch, exists := newScheduleMap[oldSch.ID]
-				if !exists {
-					return errors.New("cannot delete enabled schedules during an active focus session")
-				}
-				if !newSch.Enabled {
-					return errors.New("cannot disable active schedules during an active focus session")
-				}
-			}
-		}
-	}
-
-	a.Store.Data.Schedules = schedules
-	if err := a.Store.Save(); err != nil {
+	if err := a.applyOp(storage.Operation{Type: storage.OpSaveSchedules, Schedules: schedules}); err != nil {
 		return err
 	}
 
@@ -63,23 +33,23 @@ func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 		}
 	}
 
-	// Spawn Ghost if enabled schedules exist but no Ghost is running
+	// Spawn Ghost if enabled schedules exist but no Ghost is set up yet.
+	a.Store.Load()
 	if hasEnabledSchedules && a.Store.Data.GhostTaskName == "" {
 		currentExe, err := os.Executable()
 		if err == nil {
 			taskName := obfuscation.GenerateTaskName()
 			ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
 			if err == nil {
-				a.Store.Data.GhostTaskName = taskName
-				a.Store.Data.GhostExePath = ghostExe
-				a.Store.Data.LastEnforcementError = ""
-				a.Store.Save()
 				// Skip re-registration when a correct task already exists; the
 				// non-elevated UI can't overwrite it (would be "Access is denied").
 				if !scheduler.PersistenceCurrent(ghostExe, taskName) {
 					a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
 				}
+				// Spawn first so a strong-mode Ghost is up to receive the next op.
 				a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
+				// Record where the Ghost lives (routed through the policy).
+				_ = a.applyOp(storage.Operation{Type: storage.OpSetGhostInfo, GhostTaskName: taskName, GhostExePath: ghostExe})
 			}
 		}
 	}

@@ -23,36 +23,11 @@ func debugLog(msg string) {
 	f.WriteString(time.Now().Format(time.RFC3339) + " " + msg + "\n")
 }
 
-// IsScheduleActive checks if any enabled schedule matches the current time
+// IsScheduleActive checks if any enabled schedule matches the current time.
+// The actual window logic lives in storage.SchedulesActiveAt so the enforcer
+// and the operation policy share one implementation.
 func IsScheduleActive(schedules []storage.Schedule) bool {
-	now := time.Now()
-	currentDay := now.Format("Mon")    // "Mon", "Tue", ...
-	currentTime := now.Format("15:04") // "HH:MM"
-
-	for _, s := range schedules {
-		if !s.Enabled {
-			continue
-		}
-
-		// Check Day
-		dayMatch := false
-		for _, d := range s.Days {
-			if d == currentDay {
-				dayMatch = true
-				break
-			}
-		}
-		if !dayMatch {
-			continue
-		}
-
-		// Check Time Range
-		// Simple string comparison works for 24h "HH:MM" format
-		if currentTime >= s.StartTime && currentTime < s.EndTime {
-			return true
-		}
-	}
-	return false
+	return storage.SchedulesActiveAt(schedules, time.Now())
 }
 
 // StartEnforcer runs deeply in the background. It monitors the lock time and schedules.
@@ -98,6 +73,10 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		lastModTime = info.ModTime()
 	}
 
+	// Process any request the UI queued before we started (e.g. the very first
+	// StartFocus, which the non-elevated UI cannot write itself).
+	processRequests(store)
+
 	// Initial check to block immediately if needed
 	store.Load()
 	if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
@@ -112,6 +91,10 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		select {
 		case <-ticker.C:
 			// fast loop
+
+			// 0a. Apply any UI request (strong mode: the UI cannot sign the
+			// config, so it hands operations to us to validate and commit).
+			processRequests(store)
 
 			// 0. Check for Config Changes (Immediate Reaction)
 			if info, err := os.Stat(configPath); err == nil {
@@ -234,6 +217,29 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			}
 		}
 	}
+}
+
+// processRequests drains one queued UI operation (if any), validates it with
+// the shared policy, and writes the verdict back for the UI. Only a signer
+// (the elevated Ghost in strong mode) acts; a non-signer never reaches here.
+func processRequests(store *storage.Store) {
+	if !store.CanSign() {
+		return
+	}
+	dir := store.RequestDir()
+	req, ok := storage.TakePendingRequest(dir)
+	if !ok {
+		return
+	}
+	err := store.ApplyRequest(req.Op, time.Now())
+	res := storage.Result{ID: req.ID, OK: err == nil}
+	if err != nil {
+		res.Error = err.Error()
+		debugLog("Request refused (" + string(req.Op.Type) + "): " + err.Error())
+	} else {
+		debugLog("Request applied: " + string(req.Op.Type))
+	}
+	storage.WriteResult(dir, res)
 }
 
 func blockSites(store *storage.Store) {

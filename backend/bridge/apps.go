@@ -2,11 +2,10 @@ package bridge
 
 import (
 	"errors"
+	"focus-lock/backend/storage"
 	"focus-lock/backend/sysinfo"
-	"focus-lock/backend/watchdog"
 	"sort"
 	"strings"
-	"time"
 )
 
 // GetInstalledApps returns a list of installed applications
@@ -20,45 +19,19 @@ func (a *App) AddApp(appName string) error {
 	if appName == "" {
 		return errors.New("app name cannot be empty")
 	}
-	a.Store.Load()
-	// Check duplicate
-	for _, existing := range a.Store.Data.BlockedApps {
-		if existing == appName {
-			return nil
-		}
-	}
-	a.Store.Data.BlockedApps = append(a.Store.Data.BlockedApps, appName)
-	sort.Strings(a.Store.Data.BlockedApps)
-	return a.Store.Save()
+	return a.applyOp(storage.Operation{Type: storage.OpAddApp, Name: appName})
 }
 
-// RemoveApp removes an app from the blocked list
+// RemoveApp removes an app from the blocked list. The lock-integrity check
+// (no removal during an active session) is enforced by the policy, which in
+// strong mode runs inside the elevated Ghost.
 func (a *App) RemoveApp(appName string) error {
-	a.Store.Load()
-
-	// Check if session is active - prevent removal during active session
-	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
-	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
-	if manualActive || scheduleActive {
-		return errors.New("cannot remove apps during an active focus session")
-	}
-
-	newApps := []string{}
-	for _, existing := range a.Store.Data.BlockedApps {
-		if existing != appName {
-			newApps = append(newApps, existing)
-		}
-	}
-	a.Store.Data.BlockedApps = newApps
-	return a.Store.Save()
+	return a.applyOp(storage.Operation{Type: storage.OpRemoveApp, Name: appName})
 }
 
 // SetBlockedApps updates the entire list of blocked apps at once.
 func (a *App) SetBlockedApps(apps []string) error {
-	a.Store.Load()
-	sort.Strings(apps)
-	a.Store.Data.BlockedApps = apps
-	return a.Store.Save()
+	return a.applyOp(storage.Operation{Type: storage.OpSetApps, Apps: apps})
 }
 
 // GetTopBlockedApps returns the top 5 most blocked apps by duration

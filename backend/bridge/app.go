@@ -33,6 +33,18 @@ func (a *App) Startup(ctx context.Context) {
 
 	// Startup Cleanup / Sanity Check
 	a.Store.Load()
+
+	// Strong mode: the elevated Ghost owns the config and all enforcement.
+	// The non-elevated UI must never write the config or run the enforcer
+	// loop (it cannot sign). Its only job here is to make sure the Ghost is
+	// running; everything else is driven through the request channel.
+	if !a.Store.CanSign() {
+		if !isGhostProcessRunning() && a.Store.Data.GhostExePath != "" && a.Store.Data.GhostTaskName != "" {
+			_ = spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName)
+		}
+		return
+	}
+
 	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
 	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
 
@@ -120,6 +132,23 @@ func (a *App) GetConfig() storage.Config {
 	a.Store.Load()
 	sort.Strings(a.Store.Data.BlockedApps)
 	return a.Store.Data
+}
+
+// applyOp routes a config mutation through the correct path for the current
+// mode. In reduced mode (this process can sign) it validates with the shared
+// policy and saves directly. In strong mode the non-elevated UI cannot sign,
+// so it hands the operation to the elevated Ghost and waits for the verdict —
+// the Ghost re-validates with the same policy, so a tampered or hand-crafted
+// request can never weaken an active lock.
+func (a *App) applyOp(op storage.Operation) error {
+	if a.Store.CanSign() {
+		a.Store.Load()
+		if err := storage.ApplyOperation(&a.Store.Data, op, time.Now()); err != nil {
+			return err
+		}
+		return a.Store.Save()
+	}
+	return a.Store.SubmitRequest(op, 3*time.Second)
 }
 
 // warnEnforcement records a user-visible warning when an enforcement setup

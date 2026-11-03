@@ -5,6 +5,18 @@
 # privileges, on AC or battery, with no time limit, and with a 1-minute
 # repetition so a killed enforcer is relaunched within ~1 minute.
 #
+# It also provisions the tamper-protection secret in HKLM so the config's HMAC
+# key is no longer readable by the (non-admin) user it enforces. The secret
+# lives in HKLM\SOFTWARE\FocusLock\Security with an ACL that grants only SYSTEM
+# and Administrators: the elevated Ghost (this task, run with highest privilege)
+# can read it, but the medium-integrity UI cannot, so the user can no longer read
+# the key and forge a config. This turns on "strong mode"; without it the app
+# falls back to the per-user HKCU secret ("reduced mode").
+#
+# NOTE: strong mode assumes the account is a local administrator (so the
+# HighestAvailable task actually runs elevated). On a standard-user account the
+# Ghost can't read the secret and the app stays in reduced mode.
+#
 # The app can't register this itself: the UI runs non-elevated and a
 # highest-privilege task needs admin (schtasks returns "Access is denied"
 # otherwise). Run this ONCE; it prompts for elevation (UAC) if needed. Re-run it
@@ -91,5 +103,46 @@ try {
 finally {
     Remove-Item $tmp -Force -ErrorAction SilentlyContinue
 }
+
+# --- Strong-mode secret provisioning ---------------------------------------
+# Store the HMAC secret where the enforced user cannot read it. The elevated
+# Ghost reads it (Administrators enabled in its task token); the medium UI
+# cannot (Administrators is filtered/disabled in its token).
+$base = 'HKLM:\SOFTWARE\FocusLock'
+$secKey = Join-Path $base 'Security'
+
+if (-not (Test-Path $base)) { New-Item -Path $base -Force | Out-Null }
+if (-not (Test-Path $secKey)) { New-Item -Path $secKey -Force | Out-Null }
+
+# Harden the Security subkey ACL: no inheritance, only SYSTEM + Administrators.
+$acl = Get-Acl -Path $secKey
+$acl.SetAccessRuleProtection($true, $false)   # protect; do not copy inherited ACEs
+foreach ($rule in @($acl.Access)) { [void]$acl.RemoveAccessRule($rule) }
+$adminsSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')
+$systemSid = New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')
+$inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
+$prop = [System.Security.AccessControl.PropagationFlags]::None
+$allow = [System.Security.AccessControl.AccessControlType]::Allow
+$acl.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($adminsSid, 'FullControl', $inherit, $prop, $allow)))
+$acl.AddAccessRule((New-Object System.Security.AccessControl.RegistryAccessRule($systemSid, 'FullControl', $inherit, $prop, $allow)))
+Set-Acl -Path $secKey -AclObject $acl
+
+# Generate the secret ONLY if absent — regenerating would invalidate every
+# config/backup already signed with the old key.
+$existing = (Get-ItemProperty -Path $secKey -Name 'SecretKey' -ErrorAction SilentlyContinue).SecretKey
+if ([string]::IsNullOrEmpty($existing)) {
+    $bytes = New-Object byte[] 32
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $hex = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
+    New-ItemProperty -Path $secKey -Name 'SecretKey' -PropertyType String -Value $hex -Force | Out-Null
+    Write-Host "[setup] Generated tamper-protection secret (strong mode)." -ForegroundColor Green
+} else {
+    Write-Host "[setup] Existing tamper-protection secret preserved." -ForegroundColor Green
+}
+
+# Mark strong mode as provisioned (readable by the UI so it knows to use the
+# request channel instead of signing).
+New-ItemProperty -Path $base -Name 'Provisioned' -PropertyType DWord -Value 1 -Force | Out-Null
+Write-Host "[setup] Strong mode enabled (config signing moved to the elevated enforcer)." -ForegroundColor Cyan
 
 if ($Elevated) { Read-Host "`nDone. Press Enter to close" }
