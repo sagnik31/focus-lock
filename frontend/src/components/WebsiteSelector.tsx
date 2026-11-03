@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Plus, Trash2, Check } from 'lucide-react';
 
 interface WebsiteSelectorProps {
     sites: string[];
@@ -62,9 +63,7 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                     onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                     className="w-full bg-slate-950/50 border border-slate-700/50 focus:border-blue-500/50 rounded-xl px-4 py-3 pl-10 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-500 text-sm"
                 />
-                <svg className="w-5 h-5 text-slate-500 absolute left-3.5 top-3 group-focus-within:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
+                <Plus className="w-5 h-5 text-slate-500 absolute left-3 top-3 group-focus-within:text-blue-400 transition-colors" />
             </div>
 
             {/* Sites List */}
@@ -92,12 +91,11 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                                 {!isLocked && (
                                     <button
                                         onClick={() => onRemove(site)}
-                                        className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
+                                        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
                                         title="Remove"
+                                        aria-label={`Remove ${site}`}
                                     >
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                        </svg>
+                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                 )}
                             </div>
@@ -164,9 +162,7 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                                                 />
                                                 {site}
                                                 {isBlocked && (
-                                                    <svg className="w-3 h-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                    </svg>
+                                                    <Check className="w-3 h-3 text-blue-400" />
                                                 )}
                                                 {!isBlocked && <span className="opacity-0 hover:opacity-100">+</span>}
                                             </button>

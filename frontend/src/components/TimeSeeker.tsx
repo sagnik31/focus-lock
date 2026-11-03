@@ -70,7 +70,7 @@ export const TimeSeeker: React.FC<TimeSeekerProps> = ({ onDurationChange, onStar
                 <div className="absolute w-full h-2 bg-slate-800/50 rounded-full overflow-hidden border border-white/5">
                     {/* Progress Fill */}
                     <div
-                        className="h-full bg-gradient-to-r from-blue-600 to-purple-600 transition-all duration-75 ease-out"
+                        className="h-full bg-blue-600 transition-all duration-75 ease-out"
                         style={{ width: `${progressPercent}%` }}
                     />
                 </div>
@@ -106,9 +106,9 @@ export const TimeSeeker: React.FC<TimeSeekerProps> = ({ onDurationChange, onStar
             {/* Start Button */}
             <button
                 onClick={onStart}
-                className="w-full max-w-[200px] bg-white text-slate-950 font-bold py-4 rounded-xl hover:bg-blue-50 transition-colors shadow-lg shadow-white/5"
+                className="w-full max-w-[200px] bg-white text-slate-950 font-semibold py-4 rounded-xl hover:bg-blue-50 transition-colors shadow-lg shadow-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
             >
-                START FOCUS
+                Start focus
             </button>
         </div>
     );

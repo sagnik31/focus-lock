@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { sysinfo } from "../../wailsjs/go/models";
 import { EmergencyUnlock } from "../../wailsjs/go/bridge/App";
+import { AlertTriangle, Lock, Plus } from 'lucide-react';
 
 interface FocusActiveProps {
     endTime: string;
@@ -61,17 +62,16 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
     const pauseSecs = pauseLeft % 60;
 
     return (
-        <div className={`min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center justify-start p-8 font-sans relative overflow-y-auto transition-colors duration-500 ${isPaused ? 'border-4 border-amber-500/20' : ''}`}>
-            {/* Background Pulse Effect */}
-            <div className="absolute inset-0 bg-blue-900/5 pointer-events-none fixed"></div>
+        <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-start p-8 font-sans relative overflow-y-auto transition-colors duration-500 ${isPaused ? 'border-4 border-amber-500/20' : ''}`}>
+            {/* Ambient Background Effects (match main layout) */}
+            <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2 fixed"></div>
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none translate-y-1/2 fixed"></div>
 
             <div className="relative z-10 w-full max-w-4xl flex flex-col items-center space-y-12 pt-12">
 
                 {enforcementError && (
                     <div className="w-full bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-3 rounded-xl flex items-start gap-3 text-sm">
-                        <svg className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
+                        <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                         <div>
                             <p className="font-semibold text-amber-300">Enforcement warning</p>
                             <p className="text-amber-200/80">{enforcementError}</p>
@@ -98,7 +98,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                         </>
                     ) : (
                         <>
-                            <div className={`inline-block px-4 py-1.5 rounded-full border font-semibold tracking-wider text-sm uppercase ${isSchedule ? 'bg-purple-500/10 border-purple-500/20 text-purple-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'}`}>
+                            <div className="inline-block px-4 py-1.5 rounded-full border font-semibold tracking-wider text-sm uppercase bg-blue-500/10 border-blue-500/20 text-blue-400">
                                 {isSchedule ? 'Scheduled Session Active' : 'Focus Mode Active'}
                             </div>
 
@@ -126,9 +126,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                         }`}
                                     title={emergencyUnlocksUsed >= 2 ? "Emergency unlock limit reached" : "Unlocks apps for 1 minute"}
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                    </svg>
+                                    <Lock className="h-4 w-4" />
                                     Emergency Unlock (1m) • {Math.max(0, 2 - emergencyUnlocksUsed)} left
                                 </button>
                                 {emergencyUnlocksUsed >= 2 && (
@@ -143,9 +141,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                         onClick={onShowSettings}
                                         className="px-5 py-2 rounded-lg bg-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white text-sm font-medium transition-all flex items-center gap-2 mx-auto border border-slate-600/50 hover:border-slate-500"
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                                        </svg>
+                                        <Plus className="h-4 w-4" />
                                         Add More to Block List
                                     </button>
                                 </div>
@@ -169,7 +165,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                 </div>
 
                 {/* Blocked Apps Grid */}
-                <div className={`w-full bg-slate-800/50 rounded-2xl border border-slate-700/50 p-8 backdrop-blur-sm transition-opacity duration-300 ${isPaused ? 'opacity-50 grayscale' : 'opacity-100'}`}>
+                <div className={`w-full bg-slate-900/40 rounded-2xl border border-white/5 p-8 backdrop-blur-md shadow-xl transition-opacity duration-300 ${isPaused ? 'opacity-50 grayscale' : 'opacity-100'}`}>
                     <h3 className="text-slate-400 text-sm uppercase tracking-widest mb-6 text-center">
                         {isPaused ? "Apps Temporarily Unlocked" : `Blocked Applications (${blockedApps.length})`}
                     </h3>
@@ -178,7 +174,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                         {blockedApps.map((exeName) => {
                             const appInfo = appMap.get(exeName.toLowerCase());
                             return (
-                                <div key={exeName} className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-lg border border-slate-700/50 shadow-sm opacity-75">
+                                <div key={exeName} className="flex items-center gap-3 bg-slate-800/40 p-3 rounded-lg border border-white/5 shadow-sm opacity-75">
                                     {/* Icon */}
                                     {appInfo?.icon ? (
                                         <img src={appInfo.icon} alt={appInfo.name} className="w-8 h-8 object-contain" />
@@ -207,7 +203,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
 
                             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                 {blockedSites.map((site) => (
-                                    <div key={site} className="flex items-center gap-3 bg-slate-900/80 p-3 rounded-lg border border-slate-700/50 shadow-sm opacity-75">
+                                    <div key={site} className="flex items-center gap-3 bg-slate-800/40 p-3 rounded-lg border border-white/5 shadow-sm opacity-75">
                                         {/* Icon */}
                                         <div className="w-8 h-8 bg-slate-700 rounded flex items-center justify-center overflow-hidden">
                                             <img

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ScheduleEditor } from './ScheduleEditor';
 import { GetSchedules, SaveSchedules } from '../../wailsjs/go/bridge/App';
 import { storage } from '../../wailsjs/go/models';
+import { Plus, CalendarClock, Pencil, Trash2 } from 'lucide-react';
 
 interface ScheduleListProps {
     isLocked?: boolean;
@@ -82,18 +83,16 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Schedules</h3>
                 <button
                     onClick={() => setIsCreating(true)}
-                    className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-all shadow-lg shadow-blue-900/20"
+                    className="text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                 >
-                    + NEW
+                    <Plus className="w-4 h-4" /> New
                 </button>
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-3 custom-scrollbar pr-2 min-h-0">
                 {schedules.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 opacity-60">
-                        <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
+                        <CalendarClock className="w-10 h-10" strokeWidth={1} />
                         <span className="text-sm">No schedules set</span>
                     </div>
                 ) : (
@@ -144,21 +143,19 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
                                         <>
                                             <button
                                                 onClick={() => setEditingSchedule(schedule)}
-                                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50"
                                                 title="Edit"
+                                                aria-label={`Edit ${schedule.name}`}
                                             >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                </svg>
+                                                <Pencil className="w-3.5 h-3.5" />
                                             </button>
                                             <button
                                                 onClick={() => handleDelete(schedule.id)}
-                                                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                                                className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
                                                 title="Delete"
+                                                aria-label={`Delete ${schedule.name}`}
                                             >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
+                                                <Trash2 className="w-3.5 h-3.5" />
                                             </button>
                                         </>
                                     )}

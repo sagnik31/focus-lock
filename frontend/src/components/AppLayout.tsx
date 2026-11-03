@@ -8,6 +8,10 @@ import { ScheduleList } from './ScheduleList';
 import { ImportModal } from './ImportModal';
 import { useState } from "react";
 import logo from '../assets/logo.png';
+import {
+    Download, Check, AlertTriangle, Lock, ArrowLeft, Search, Trash2,
+    Ban, ChevronDown, Plus,
+} from 'lucide-react';
 
 interface AppLayoutProps {
     config: storage.Config | null;
@@ -97,7 +101,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         <div id="app" className="min-h-screen bg-slate-950 text-slate-100 font-sans relative overflow-hidden selection:bg-blue-500/30 flex flex-col">
             {/* Ambient Background Effects */}
             <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none -translate-y-1/2"></div>
-            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none translate-y-1/2"></div>
+            <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl pointer-events-none translate-y-1/2"></div>
 
             <div className="relative z-10 container mx-auto px-4 py-4 max-w-5xl flex-1 flex flex-col h-full">
 
@@ -112,33 +116,25 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     <div className="flex items-center gap-2">
                         <button
                             onClick={() => setShowImportModal(true)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wider uppercase border cursor-pointer transition-all flex items-center gap-1.5 ${importSuccess
+                            aria-label="Import settings"
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 ${importSuccess
                                 ? 'bg-green-500/20 border-green-500/50 text-green-400'
-                                : 'bg-slate-800/50 border-slate-700/50 text-slate-400 hover:bg-blue-600/20 hover:border-blue-500/50 hover:text-blue-400 backdrop-blur-sm'
+                                : 'bg-slate-800/50 border-slate-700/50 text-slate-300 hover:bg-blue-600/20 hover:border-blue-500/50 hover:text-blue-400 backdrop-blur-sm'
                                 }`}
                         >
-                            {importSuccess ? (
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                </svg>
-                            ) : (
-                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                </svg>
-                            )}
+                            {importSuccess ? <Check className="w-3.5 h-3.5" /> : <Download className="w-3.5 h-3.5" />}
                             {importSuccess ? 'Imported' : 'Import'}
                         </button>
-                        <div className="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase bg-slate-800/50 border border-slate-700/50 text-slate-400 backdrop-blur-sm">
-                            System Ready
+                        <div className="px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800/50 border border-slate-700/50 text-slate-400 backdrop-blur-sm flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                            Ready
                         </div>
                     </div>
                 </header>
 
                 {error && (
                     <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl flex items-center gap-3 backdrop-blur-sm text-sm shrink-0">
-                        <svg className="w-4 h-4 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
+                        <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
                         {error}
                     </div>
                 )}
@@ -146,9 +142,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {/* Enforcement Warning Banner */}
                 {config?.last_enforcement_error && (
                     <div className="mb-4 bg-amber-500/10 border border-amber-500/30 text-amber-200 px-4 py-3 rounded-xl flex items-start gap-3 backdrop-blur-sm text-sm shrink-0">
-                        <svg className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
+                        <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
                         <div>
                             <p className="font-semibold text-amber-300">Enforcement warning</p>
                             <p className="text-amber-200/80">{config.last_enforcement_error}</p>
@@ -161,9 +155,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     <div className="mb-4 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3 flex items-center justify-between backdrop-blur-sm shrink-0">
                         <div className="flex items-center gap-3">
                             <div className="w-8 h-8 bg-blue-500/20 rounded-full flex items-center justify-center">
-                                <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                </svg>
+                                <Lock className="w-4 h-4 text-blue-400" />
                             </div>
                             <div>
                                 <p className="text-blue-300 font-semibold text-sm">Focus Active - Add-Only Mode</p>
@@ -172,11 +164,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         </div>
                         <button
                             onClick={onBackToFocus}
-                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2"
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-lg transition-colors flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                         >
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                            </svg>
+                            <ArrowLeft className="w-4 h-4" />
                             Back to Focus
                         </button>
                     </div>
@@ -195,15 +185,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                 <div className="bg-slate-950/50 p-1 rounded-xl border border-white/5 flex gap-1">
                                     <button
                                         onClick={() => setSessionType('manual')}
-                                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${sessionType === 'manual' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${sessionType === 'manual' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:text-slate-200'}`}
                                     >
-                                        Manual Session
+                                        Manual
                                     </button>
                                     <button
                                         onClick={() => setSessionType('scheduled')}
-                                        className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${sessionType === 'scheduled' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-500 hover:text-slate-300'}`}
+                                        className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${sessionType === 'scheduled' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:text-slate-200'}`}
                                     >
-                                        Scheduled Session
+                                        Scheduled
                                     </button>
                                 </div>
                             </div>
@@ -282,9 +272,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                 {activeTab === 'apps' ? (
                                     <button
                                         onClick={() => setIsSelectorOpen(true)}
-                                        className="text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg shadow-blue-900/20"
+                                        className="text-sm font-semibold bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-all shadow-lg shadow-blue-900/20 flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                                     >
-                                        + SELECT ALL
+                                        <Plus className="w-4 h-4" /> Select apps
                                     </button>
                                 ) : null}
                             </div>
@@ -301,18 +291,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                             onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                                             className="w-full bg-slate-950/50 border border-slate-700/50 focus:border-blue-500/50 rounded-xl px-4 py-3 pl-10 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all placeholder:text-slate-500 text-sm"
                                         />
-                                        <svg className="w-5 h-5 text-slate-500 absolute left-3.5 top-3 group-focus-within:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
+                                        <Search className="w-5 h-5 text-slate-500 absolute left-3 top-3 group-focus-within:text-blue-400 transition-colors" />
                                     </div>
 
                                     {/* Apps List - Larger Items */}
                                     <div className="flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar min-h-0">
                                         {config.blocked_apps.length === 0 ? (
                                             <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 opacity-60">
-                                                <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
+                                                <Ban className="w-10 h-10" strokeWidth={1} />
                                                 <span className="text-sm">No locked applications</span>
                                             </div>
                                         ) : (
@@ -337,12 +323,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                         {!isLocked && (
                                                             <button
                                                                 onClick={() => handleRemove(exeName)}
-                                                                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all"
+                                                                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-slate-400 hover:text-red-400 p-2 hover:bg-red-400/10 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
                                                                 title="Remove"
+                                                                aria-label={`Remove ${appInfo?.name || exeName}`}
                                                             >
-                                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                                </svg>
+                                                                <Trash2 className="w-4 h-4" />
                                                             </button>
                                                         )}
                                                     </div>
@@ -409,13 +394,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {/* Confirmation Modal */}
                 {
                     showConfirm && pendingSession && (
-                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-                            <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-6 transform scale-100">
+                        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 fl-overlay-in">
+                            <div className="bg-slate-900 border border-white/10 rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-6 fl-modal-in">
                                 <div className="text-center space-y-2">
                                     <div className="w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-2 border border-blue-500/20">
-                                        <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                                        </svg>
+                                        <Lock className="w-6 h-6 text-blue-400" />
                                     </div>
                                     <h3 className="text-lg font-bold text-white">Confirm Lock</h3>
                                     <p className="text-slate-400 text-sm">
@@ -474,10 +457,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                         onClick={() => setShowDetails(!showDetails)}
                                         className="w-full py-2 flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-blue-400 hover:bg-white/5 transition-colors border-t border-white/5"
                                     >
-                                        <span>{showDetails ? 'Hide Details' : 'View Blocked List'}</span>
-                                        <svg className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                        </svg>
+                                        <span>{showDetails ? 'Hide details' : 'View blocked list'}</span>
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
                                     </button>
                                 </div>
 
@@ -490,9 +471,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     </button>
                                     <button
                                         onClick={confirmStart}
-                                        className="flex-1 px-4 py-3 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold shadow-lg shadow-blue-900/40 transition-all text-sm"
+                                        className="flex-1 px-4 py-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-lg shadow-blue-900/40 transition-all text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
                                     >
-                                        Start Focus
+                                        Start focus
                                     </button>
                                 </div>
 

@@ -69,7 +69,7 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ schedule, onSave
     };
 
     return (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+        <div className="space-y-6 fl-modal-in">
             <div className="flex justify-between items-center">
                 <h3 className="text-lg font-bold text-white">
                     {schedule ? 'Edit Schedule' : 'New Schedule'}
