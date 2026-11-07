@@ -14,14 +14,17 @@ interface FocusActiveProps {
     onShowSettings?: () => void;
     onQuit?: () => void;
     enforcementError?: string;
+    // Offset (ms) from this browser's clock to the enforcer's trusted clock, so
+    // the countdown matches what the Ghost enforces even if the system clock moves.
+    nowOffsetMs?: number;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, nowOffsetMs = 0 }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
     const calculateTime = () => {
-        const now = new Date().getTime();
+        const now = new Date().getTime() + nowOffsetMs;
 
         // 1. Check Pause Status
         if (pausedUntil) {
@@ -42,7 +45,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
         calculateTime();
         const interval = setInterval(calculateTime, 1000);
         return () => clearInterval(interval);
-    }, [endTime, pausedUntil]);
+    }, [endTime, pausedUntil, nowOffsetMs]);
 
     const handleEmergencyUnlock = async () => {
         try {

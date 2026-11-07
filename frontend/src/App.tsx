@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, GetNow, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
@@ -14,17 +14,28 @@ function App() {
     const [installedApps, setInstalledApps] = useState<sysinfo.AppInfo[]>([]);
     const [topApps, setTopApps] = useState<sysinfo.AppInfo[]>([]);
     const [focusViewMode, setFocusViewMode] = useState<'active' | 'settings'>('active');
+    // Offset (ms) between the enforcer's trusted (NTP-anchored) clock and this
+    // browser's local clock: trustedNow = Date.now() + nowOffset. Keeps the UI's
+    // timer and lock state aligned with what the Ghost actually enforces, even if
+    // the system clock is changed.
+    const [nowOffset, setNowOffset] = useState(0);
 
     const refresh = async () => {
         try {
             const data = await GetConfig();
             setConfig(data);
+            try {
+                const serverMs = await GetNow();
+                setNowOffset(serverMs - Date.now());
+            } catch { /* GetNow unavailable: fall back to local clock (offset 0) */ }
             const top = await GetTopBlockedApps();
             setTopApps(top);
         } catch (e) {
             console.error(e);
         }
     };
+
+    const trustedNow = () => new Date(Date.now() + nowOffset);
 
     useEffect(() => {
         refresh();
@@ -53,19 +64,18 @@ function App() {
     }, [installedApps]);
 
     // Helper to check active schedule
-    const getActiveScheduleEndTime = (schedules: storage.Schedule[] | undefined): Date | null => {
+    const getActiveScheduleEndTime = (schedules: storage.Schedule[] | undefined, now: Date): Date | null => {
         if (!schedules) return null;
 
-        const now = new Date();
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
         const today = days[now.getDay()];
         const yesterday = days[(now.getDay() + 6) % 7];
         const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // "HH:MM" 24h
 
-        // dayOffset is added to today's date to land on the window's END day.
+        // dayOffset is added to the (trusted) current date to land on the window's END day.
         const endDateFor = (endTime: string, dayOffset: number): Date => {
             const [h, m] = endTime.split(':').map(Number);
-            const endDate = new Date();
+            const endDate = new Date(now.getTime());
             endDate.setDate(endDate.getDate() + dayOffset);
             endDate.setHours(h, m, 0, 0);
             return endDate;
@@ -95,12 +105,12 @@ function App() {
     };
 
     // Derived State
-    const activeScheduleEndTime = useMemo(() => getActiveScheduleEndTime(config?.schedules), [config, new Date().getMinutes()]); // Re-eval on minute change? Effect loop handles refresh.
+    const activeScheduleEndTime = useMemo(() => getActiveScheduleEndTime(config?.schedules, trustedNow()), [config, nowOffset, new Date().getMinutes()]); // Re-eval on minute change? Effect loop handles refresh.
 
     const isLocked = useMemo(() => {
-        const manualLock = config?.lock_end_time && new Date(config.lock_end_time) > new Date();
+        const manualLock = config?.lock_end_time && new Date(config.lock_end_time) > trustedNow();
         return manualLock || !!activeScheduleEndTime;
-    }, [config, activeScheduleEndTime]);
+    }, [config, activeScheduleEndTime, nowOffset]);
 
     const handleAdd = async () => {
         if (!newApp) return;
@@ -236,7 +246,7 @@ function App() {
             // Logic: If manual lock is active, use it. If not, use schedule.
             // But what if both? Usually manual overrides.
             // Let's check logic: isLocked is OR.
-            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > new Date();
+            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > trustedNow();
             if (!manualActive) {
                 effectiveEndTime = activeScheduleEndTime.toISOString();
             } else {
@@ -292,6 +302,7 @@ function App() {
                 onShowSettings={() => setFocusViewMode('settings')}
                 onQuit={handleQuit}
                 enforcementError={config.last_enforcement_error}
+                nowOffsetMs={nowOffset}
             />
         );
     }

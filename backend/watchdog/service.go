@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sys/windows"
 
 	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/clock"
 	"focus-lock/backend/protection"
 )
 
@@ -27,12 +28,23 @@ func debugLog(msg string) {
 // The actual window logic lives in storage.SchedulesActiveAt so the enforcer
 // and the operation policy share one implementation.
 func IsScheduleActive(schedules []storage.Schedule) bool {
-	return storage.SchedulesActiveAt(schedules, time.Now())
+	return storage.SchedulesActiveAt(schedules, clock.Default.Now())
 }
 
 // StartEnforcer runs deeply in the background. It monitors the lock time and schedules.
 func StartEnforcer(store *storage.Store, isGhost bool) {
 	debugLog(fmt.Sprintf("Enforcer Watchdog Started (Ghost=%v)", isGhost))
+
+	// Anchor the trusted clock to NTP and keep it synced. Enforcement decisions
+	// below read clock.Default.Now() (not the raw system clock), so advancing the
+	// Windows time-of-day can no longer end a lock early or skip a schedule.
+	clock.Default.Start(5*time.Minute, func(err error) {
+		if err != nil {
+			debugLog("NTP sync failed; using best-effort local time: " + err.Error())
+		} else {
+			debugLog("NTP sync ok; trusted time anchored")
+		}
+	})
 
 	// Main Polling Ticker (Aggressive for coverage)
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -79,7 +91,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 
 	// Initial check to block immediately if needed
 	store.Load()
-	if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
+	if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
 		blockSites(store)
 	} else if IsScheduleActive(store.Data.Schedules) {
 		blockSites(store)
@@ -108,7 +120,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 						// Force block sites immediately (Flush DNS)
 						// Also re-checks lock status inside blockSites/enforce
 						store.Load() // Ensure store.Data is latest for below checks
-						if !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime) {
+						if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
 							blockSites(store)
 						} else if IsScheduleActive(store.Data.Schedules) {
 							blockSites(store)
@@ -124,7 +136,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			// We MUST check time. So we use the loaded store data.
 
 			// 1. Check Locked State
-			manualActive := !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime)
+			manualActive := !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime)
 
 			// 2. Check Schedule State
 			// Schedule needs current time, which changes.
@@ -135,7 +147,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			shouldEnforce := manualActive || scheduleActive
 
 			// 3. Check Pause
-			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				shouldEnforce = false
 			}
 
@@ -159,7 +171,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			}
 
 			// 2. Recalculate State with fresh data
-			manualActive := !store.Data.LockEndTime.IsZero() && time.Now().Before(store.Data.LockEndTime)
+			manualActive := !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime)
 
 			// NTP Check logic could go here, but for now we trust local time for simplicity in V1 schedule
 			// For Manual Lock, we still respect the monotonic expiration if we were tracking it,
@@ -169,7 +181,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			shouldEnforce := manualActive || scheduleActive
 
 			// 3. Check Pause
-			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				debugLog("Emergency Unlocked (Paused). Unblocking hosts.")
 				hosts.Unblock()
 				continue
@@ -178,7 +190,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			if shouldEnforce {
 				// 4. Update Remaining Duration (Only for Manual Lock)
 				if manualActive {
-					updatedRemaining := time.Until(store.Data.LockEndTime)
+					updatedRemaining := store.Data.LockEndTime.Sub(clock.Default.Now())
 					if updatedRemaining < 0 {
 						updatedRemaining = 0
 					}
@@ -197,7 +209,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 				hosts.Unblock()
 
 				// Cleanup expired manual lock
-				if !store.Data.LockEndTime.IsZero() && time.Now().After(store.Data.LockEndTime) {
+				if !store.Data.LockEndTime.IsZero() && clock.Default.Now().After(store.Data.LockEndTime) {
 					store.Data.LockEndTime = time.Time{}
 					store.Data.RemainingDuration = 0
 					store.Save()
@@ -231,7 +243,7 @@ func processRequests(store *storage.Store) {
 	if !ok {
 		return
 	}
-	err := store.ApplyRequest(req.Op, time.Now())
+	err := store.ApplyRequest(req.Op, clock.Default.Now())
 	res := storage.Result{ID: req.ID, OK: err == nil}
 	if err != nil {
 		res.Error = err.Error()
@@ -281,7 +293,7 @@ func enforceFast(blockedMap map[string]bool, store *storage.Store) {
 			// CRITICAL FIX: Reload Config BEFORE killing to check for Emergency Unlock
 			// This prevents race condition where we overwrite the pause command with old data.
 			store.Load()
-			if !store.Data.PausedUntil.IsZero() && time.Now().Before(store.Data.PausedUntil) {
+			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				return // Stop enforcing if paused
 			}
 

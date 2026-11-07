@@ -202,7 +202,7 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 		// refill the emergency-unlock quota (that would be a weakening).
 		if newEnd.After(cfg.LockEndTime) {
 			cfg.LockEndTime = newEnd
-			cfg.RemainingDuration = time.Until(newEnd)
+			cfg.RemainingDuration = newEnd.Sub(now)
 		}
 	} else {
 		// Fresh lock.

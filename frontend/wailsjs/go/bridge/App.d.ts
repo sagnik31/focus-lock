@@ -21,6 +21,8 @@ export function GetConfig():Promise<storage.Config>;
 
 export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 
+export function GetNow():Promise<number>;
+
 export function GetSchedules():Promise<Array<storage.Schedule>>;
 
 export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;

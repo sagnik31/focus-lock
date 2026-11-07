@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/clock"
 	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
@@ -45,7 +46,7 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 
-	manualActive := !a.Store.Data.LockEndTime.IsZero() && time.Now().Before(a.Store.Data.LockEndTime)
+	manualActive := !a.Store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(a.Store.Data.LockEndTime)
 	scheduleActive := watchdog.IsScheduleActive(a.Store.Data.Schedules)
 
 	// Check if any schedule is enabled (not just currently active)
@@ -134,6 +135,15 @@ func (a *App) GetConfig() storage.Config {
 	return a.Store.Data
 }
 
+// GetNow returns the enforcer's trusted time as Unix milliseconds. The frontend
+// polls this and offsets its own clock by the difference, so the countdown and
+// lock view reflect the same (NTP-anchored, tamper-resistant) time the Ghost
+// enforces with — moving the system clock can't make the UI disagree with
+// enforcement.
+func (a *App) GetNow() int64 {
+	return clock.Default.Now().UnixMilli()
+}
+
 // applyOp routes a config mutation through the correct path for the current
 // mode. In reduced mode (this process can sign) it validates with the shared
 // policy and saves directly. In strong mode the non-elevated UI cannot sign,
@@ -143,7 +153,7 @@ func (a *App) GetConfig() storage.Config {
 func (a *App) applyOp(op storage.Operation) error {
 	if a.Store.CanSign() {
 		a.Store.Load()
-		if err := storage.ApplyOperation(&a.Store.Data, op, time.Now()); err != nil {
+		if err := storage.ApplyOperation(&a.Store.Data, op, clock.Default.Now()); err != nil {
 			return err
 		}
 		return a.Store.Save()

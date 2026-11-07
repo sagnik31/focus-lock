@@ -38,6 +38,10 @@ export function GetInstalledApps() {
   return window['go']['bridge']['App']['GetInstalledApps']();
 }
 
+export function GetNow() {
+  return window['go']['bridge']['App']['GetNow']();
+}
+
 export function GetSchedules() {
   return window['go']['bridge']['App']['GetSchedules']();
 }
