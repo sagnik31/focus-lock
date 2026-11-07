@@ -88,6 +88,10 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		return nil
 
 	case OpEmergencyUnlock:
+		// Refill the quota if a new schedule window has become active since it
+		// was last tied to one. Manual sessions refill in applyStartFocus; this
+		// covers recurring schedule windows, which otherwise never refilled.
+		applyScheduleUnlockReset(cfg, now)
 		if cfg.EmergencyUnlocksUsed >= 2 {
 			return errors.New("emergency unlock limit reached (2/2)")
 		}
@@ -220,6 +224,24 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 	}
 	cfg.LastEnforcementError = ""
 	return nil
+}
+
+// applyScheduleUnlockReset refills the emergency-unlock quota when a new
+// schedule window becomes active. For a recurring schedule, "a session" is one
+// window instance (identified by ActiveScheduleWindow's key); when the active
+// window set differs from the one the quota is currently tied to, the quota is
+// reset and re-tied. It is a no-op when no schedule window is active (manual
+// locks refill separately in applyStartFocus) or when the window is unchanged,
+// so it is safe to call on every operation and every enforcement tick. Returns
+// true if it changed cfg.
+func applyScheduleUnlockReset(cfg *Config, now time.Time) bool {
+	key, active := ActiveScheduleWindow(cfg.Schedules, now)
+	if !active || cfg.ScheduleUnlockWindow == key {
+		return false
+	}
+	cfg.ScheduleUnlockWindow = key
+	cfg.EmergencyUnlocksUsed = 0
+	return true
 }
 
 func applySaveSchedules(cfg *Config, op Operation, locked bool) error {

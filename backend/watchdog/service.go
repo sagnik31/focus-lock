@@ -179,6 +179,13 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			scheduleActive := IsScheduleActive(store.Data.Schedules)
 			shouldEnforce := manualActive || scheduleActive
 
+			// 2b. Refill the emergency-unlock quota at the start of a new schedule
+			// window so the UI shows the right count even before an unlock is
+			// attempted (the policy also refills authoritatively at unlock time).
+			if scheduleActive {
+				store.RefreshScheduleQuota(clock.Default.Now())
+			}
+
 			// 3. Check Pause
 			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				debugLog("Emergency Unlocked (Paused). Unblocking hosts.")
@@ -265,11 +272,16 @@ func blockSites(store *storage.Store) {
 	if store.Data.BlockCommonVPN {
 		sites = append(sites, protection.GetVPNDomains()...)
 	}
-	if len(sites) > 0 {
-		if err := hosts.Block(sites); err != nil {
-			debugLog(fmt.Sprintf("Failed to block sites: %v", err))
-		}
+	if len(sites) == 0 {
+		store.SetHostsBlockError(nil) // nothing to block; clear any stale warning
+		return
 	}
+	if err := hosts.Block(sites); err != nil {
+		debugLog(fmt.Sprintf("Failed to block sites: %v", err))
+		store.SetHostsBlockError(err) // surface it in the UI, not just the log
+		return
+	}
+	store.SetHostsBlockError(nil) // blocked successfully; clear any prior failure
 }
 
 // enforceFast uses O(1) map lookup for filenames
@@ -345,19 +357,8 @@ func enforceDeep(blockedApps []string, store *storage.Store) {
 		fullPath := getProcessPath(procEntry.ProcessID)
 		if fullPath != "" {
 			prodName, fileDesc := getFileMetadata(fullPath)
-			// Normalize
-			prodName = strings.ToLower(prodName)
-			fileDesc = strings.ToLower(fileDesc)
-
-			for _, blocked := range blockedApps {
-				blockedClean := strings.TrimSuffix(strings.ToLower(blocked), ".exe")
-
-				if (prodName != "" && strings.Contains(prodName, blockedClean)) ||
-					(fileDesc != "" && strings.Contains(fileDesc, blockedClean)) {
-
-					killProcess(procEntry.ProcessID, exeName, store)
-					break // Killed
-				}
+			if deepMatch(prodName, fileDesc, blockedApps) {
+				killProcess(procEntry.ProcessID, exeName, store)
 			}
 		}
 

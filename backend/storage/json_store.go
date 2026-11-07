@@ -8,9 +8,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
+
+// hostsBlockErrPrefix tags the LastEnforcementError messages that report a
+// site-blocking (hosts-file write) failure, so SetHostsBlockError can clear its
+// own message on recovery without clobbering an unrelated enforcement warning
+// (spawn/persistence/recovery) that shares the same field.
+const hostsBlockErrPrefix = "Website blocking failed"
 
 type Config struct {
 	BlockedApps          []string      `json:"blocked_apps"`
@@ -26,6 +33,7 @@ type Config struct {
 	EmergencyUnlocksUsed int           `json:"emergency_unlocks_used"`
 	LastEnforcementError string        `json:"last_enforcement_error"` // Non-empty when enforcement setup failed; surfaced as a UI warning
 	SessionStart         time.Time     `json:"session_start"`          // Start of the current manual session (zero if none); used to record history on end
+	ScheduleUnlockWindow string        `json:"schedule_unlock_window"` // Key of the schedule window the emergency-unlock quota is tied to; a change refills the quota (see applyScheduleUnlockReset)
 }
 
 // Schedule represents a weekly time window for automatic locking
@@ -396,4 +404,46 @@ func (s *Store) GetBlockedDuration() map[string]int64 {
 
 func (s *Store) GetFilePath() string {
 	return s.filePath
+}
+
+// SetHostsBlockError records (err != nil) or clears (err == nil) a site-blocking
+// failure in LastEnforcementError so the UI surfaces it as the amber enforcement
+// banner. It is the remaining enforcement hole: blockSites previously only wrote
+// to the debug log, so site-blocking silently failing (e.g. a reduced/user-mode
+// process that cannot write the hosts file) was invisible in the UI.
+//
+// Only a signer persists (strong-mode UI is a no-op; the elevated Ghost, which
+// actually writes the hosts file, is the authoritative reporter). It writes only
+// when the message changes, so it is cheap to call every enforcement tick. To
+// avoid clobbering an unrelated warning in the shared field, it never overwrites
+// a non-hosts message, and on recovery clears only its own message.
+func (s *Store) SetHostsBlockError(err error) {
+	if !s.canSign {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.loadInternal()
+
+	cur := s.Data.LastEnforcementError
+	if err == nil {
+		// Recovery: clear only if the banner is currently our hosts message.
+		if strings.HasPrefix(cur, hostsBlockErrPrefix) {
+			s.Data.LastEnforcementError = ""
+			_ = s.saveInternal()
+		}
+		return
+	}
+
+	// Don't overwrite a different, pre-existing enforcement warning; surface the
+	// hosts failure only when the banner is free or already showing it.
+	if cur != "" && !strings.HasPrefix(cur, hostsBlockErrPrefix) {
+		return
+	}
+	msg := hostsBlockErrPrefix + " (could not update the hosts file): " + err.Error()
+	if cur == msg {
+		return // no change
+	}
+	s.Data.LastEnforcementError = msg
+	_ = s.saveInternal()
 }

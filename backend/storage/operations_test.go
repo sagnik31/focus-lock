@@ -102,6 +102,41 @@ func TestEmergencyUnlockLimit(t *testing.T) {
 	}
 }
 
+func TestEmergencyUnlockRefillsPerScheduleWindow(t *testing.T) {
+	cfg := &Config{
+		BlockedApps: []string{"chrome.exe"},
+		Schedules:   []Schedule{{ID: "s1", Enabled: true, Days: []string{"Mon"}, StartTime: "09:00", EndTime: "17:00"}},
+	}
+
+	// Exhaust the quota during the first window instance (Mon 2026-11-02).
+	week1 := at(0, 12, 0)
+	for i := 1; i <= 2; i++ {
+		if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week1); err != nil {
+			t.Fatalf("unlock %d in the first window should succeed: %v", i, err)
+		}
+	}
+	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week1); err == nil {
+		t.Fatal("a third unlock within the same schedule window must be refused")
+	}
+
+	// The next weekly occurrence is a new session: the quota refills.
+	week2 := at(7, 12, 0) // the following Monday, same schedule
+	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week2); err != nil {
+		t.Fatalf("first unlock in the next window instance should succeed (quota refilled): %v", err)
+	}
+	if cfg.EmergencyUnlocksUsed != 1 {
+		t.Errorf("quota should have reset to 0 then incremented to 1, got %d", cfg.EmergencyUnlocksUsed)
+	}
+
+	// Still only two per window: a fresh occurrence does not grant unlimited unlocks.
+	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week2); err != nil {
+		t.Fatalf("second unlock in the new window should succeed: %v", err)
+	}
+	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week2); err == nil {
+		t.Error("a third unlock in the new window must be refused")
+	}
+}
+
 func TestIdleAllowsRemoval(t *testing.T) {
 	now := time.Now()
 	cfg := idleConfig()

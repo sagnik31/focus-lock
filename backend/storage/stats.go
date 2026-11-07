@@ -105,6 +105,23 @@ func (s *Store) RecordManualSessionEnd(now time.Time) {
 	_ = s.saveInternal()
 }
 
+// RefreshScheduleQuota refills the emergency-unlock quota at the start of each
+// new schedule window so the count the UI shows stays current even before the
+// user tries to unlock. It writes only when the active window actually changed,
+// so it is cheap to call on every enforcement tick. Only a signer persists
+// (strong-mode UI is a no-op; the elevated Ghost is authoritative).
+func (s *Store) RefreshScheduleQuota(now time.Time) {
+	if !s.canSign {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.loadInternal()
+	if applyScheduleUnlockReset(&s.Data, now) {
+		_ = s.saveInternal()
+	}
+}
+
 // StreakFromDays computes the current and longest daily streaks from a set of
 // YYYY-MM-DD markers (duplicates and order do not matter). The current streak
 // is the run of consecutive days ending today or yesterday (a one-day grace so

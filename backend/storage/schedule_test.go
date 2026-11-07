@@ -57,6 +57,40 @@ func TestSchedulesActiveAt(t *testing.T) {
 	}
 }
 
+func TestActiveScheduleWindow(t *testing.T) {
+	mon := []string{"Mon"}
+
+	// Inactive before the window: no key.
+	if k, ok := ActiveScheduleWindow([]Schedule{sched(mon, "09:00", "17:00")}, at(0, 8, 0)); ok || k != "" {
+		t.Errorf("before window: got (%q, %v), want (\"\", false)", k, ok)
+	}
+
+	// Same-day window active: key uses the start day's date (Mon 2026-11-02).
+	if k, ok := ActiveScheduleWindow([]Schedule{sched(mon, "09:00", "17:00")}, at(0, 12, 0)); !ok || k != "s|2026-11-02" {
+		t.Errorf("same-day active: got (%q, %v), want (\"s|2026-11-02\", true)", k, ok)
+	}
+
+	// Overnight window, post-midnight half (Tue 02:00): keys off the start day (Mon).
+	if k, ok := ActiveScheduleWindow([]Schedule{sched(mon, "22:00", "06:00")}, at(1, 2, 0)); !ok || k != "s|2026-11-02" {
+		t.Errorf("overnight post-midnight: got (%q, %v), want (\"s|2026-11-02\", true)", k, ok)
+	}
+}
+
+func TestActiveScheduleWindowOrderIndependent(t *testing.T) {
+	mon := []string{"Mon"}
+	a := Schedule{ID: "a", Enabled: true, Days: mon, StartTime: "08:00", EndTime: "18:00"}
+	b := Schedule{ID: "b", Enabled: true, Days: mon, StartTime: "09:00", EndTime: "17:00"}
+
+	k1, _ := ActiveScheduleWindow([]Schedule{a, b}, at(0, 12, 0))
+	k2, _ := ActiveScheduleWindow([]Schedule{b, a}, at(0, 12, 0))
+	if k1 != k2 {
+		t.Errorf("key must be independent of slice order: %q vs %q", k1, k2)
+	}
+	if k1 != "a|2026-11-02,b|2026-11-02" {
+		t.Errorf("unexpected combined key: %q", k1)
+	}
+}
+
 func TestSchedulesActiveAtDisabledAndEmpty(t *testing.T) {
 	if SchedulesActiveAt(nil, at(0, 12, 0)) {
 		t.Error("no schedules should be inactive")
