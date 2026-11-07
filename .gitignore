@@ -4,5 +4,8 @@ frontend/dist
 *.exe
 frontend/package.json.md5
 
+# Compiled installer output (keep the installer source in installer/*.iss)
+installer/Output/
+
 # Local agent handover notes — keep out of version control
 HANDOVER.md

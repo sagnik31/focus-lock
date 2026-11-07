@@ -93,49 +93,42 @@ For local development with hot-reloading of the frontend, run:
 wails dev
 ```
 
-### One-time elevated setup (recommended)
+### Install (recommended): the bundled installer
 
-Editing the `hosts` file and keeping enforcement running across reboots require
-administrator privileges. To avoid a UAC prompt every time, register a scheduled task once
-from an **elevated PowerShell** so the enforcement process can start with the privileges it
-needs:
+Editing the `hosts` file and keeping enforcement running across reboots require a one-time
+setup with administrator privileges (a Defender exclusion, the staged enforcer, a scheduled
+task, and a tamper-protection secret in `HKLM`). The installer does all of it in one pass,
+so there is no manual PowerShell step.
 
-```powershell
-$action    = New-ScheduledTaskAction -Execute "$env:APPDATA\FocusLock\Bin\FocusLockGhost.exe" -Argument "--enforce"
-$trigger   = New-ScheduledTaskTrigger -AtLogOn
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
-$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0
-Register-ScheduledTask -TaskName "FocusLockGhost" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force
-```
-
-The power-related settings matter: by default Windows Task Scheduler stops a task when the
-machine switches to battery and after a fixed run time, which would silently interrupt
-enforcement. The settings above keep it running.
-
-After this step:
-
-- Website blocking works without a UAC prompt each time.
-- Enforcement continues when the UI window is closed.
-- Future sessions start automatically without additional setup.
-
-### Launch without a UAC prompt (optional)
-
-The repository includes a helper that creates a desktop shortcut which launches the UI
-through the scheduled task, avoiding the UAC prompt on each start:
-
-1. Open the `scripts` folder.
-2. Right-click `setup_uac_bypass.ps1` and choose **Run with PowerShell**.
-3. Launch the app from the new **Focus Lock** desktop shortcut.
-
-### Antivirus note
-
-Because the enforcement process runs in the background and resists being terminated, some
-antivirus software may flag it. If that happens on your own machine, you can add an
-exclusion:
+Build the installer (needs the [Inno Setup 6](https://jrsoftware.org/isdl.php) compiler on
+`PATH` or in its default location, plus Go/Node/Wails):
 
 ```powershell
-Add-MpPreference -ExclusionPath "$env:APPDATA\FocusLock"
+powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
+
+This produces `installer\Output\FocusLock-Setup-<version>.exe`. Run it, approve the single
+UAC prompt, and the one-time enforcement setup runs automatically. Uninstalling (from
+**Apps & features**) removes the scheduled task, the `HKLM` secret, the Defender exclusion,
+and `%APPDATA%\FocusLock`.
+
+> Strong (tamper-resistant) mode assumes the signed-in user is a local administrator. On a
+> standard-user account the app still installs and runs, but stays in reduced mode (a
+> per-user `HKCU` secret).
+
+### Alternative: manual one-time setup
+
+Without the installer, run the consolidated setup script once from the `scripts` folder — it
+self-elevates (one UAC prompt) and performs the same steps. Open the app or run
+`scripts\deploy.ps1` first so the UI exe exists, then:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_setup.ps1 -ExePath "$env:APPDATA\FocusLock\focus-lock.exe"
+```
+
+After setup, website blocking no longer prompts for UAC, enforcement continues when the UI
+is closed, and future sessions start automatically. The enforcer's scheduled task is kept
+battery-safe and has no run-time limit, so Windows does not silently interrupt it.
 
 ## Usage
 
@@ -153,6 +146,7 @@ Add-MpPreference -ExclusionPath "$env:APPDATA\FocusLock"
 backend/        Go: enforcement, scheduling, storage, system info, Wails bridge
 frontend/       React + TypeScript UI (Vite + Tailwind)
 scripts/        PowerShell helpers for setup, deployment, and git hooks
+installer/      Inno Setup script for the bundled installer
 main.go         Application entry point
 wails.json      Wails project configuration
 ```
