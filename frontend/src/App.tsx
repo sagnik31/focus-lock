@@ -58,20 +58,37 @@ function App() {
 
         const now = new Date();
         const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const currentDay = days[now.getDay()];
+        const today = days[now.getDay()];
+        const yesterday = days[(now.getDay() + 6) % 7];
         const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // "HH:MM" 24h
+
+        // dayOffset is added to today's date to land on the window's END day.
+        const endDateFor = (endTime: string, dayOffset: number): Date => {
+            const [h, m] = endTime.split(':').map(Number);
+            const endDate = new Date();
+            endDate.setDate(endDate.getDate() + dayOffset);
+            endDate.setHours(h, m, 0, 0);
+            return endDate;
+        };
 
         for (const s of schedules) {
             if (!s.enabled) continue;
-            if (!s.days.includes(currentDay)) continue;
+            if (s.start_time === s.end_time) continue; // zero-length window
 
-            // Check Time Range (Same-day logic matches backend)
-            if (currentTime >= s.start_time && currentTime < s.end_time) {
-                // Parse End Time to Date
-                const [h, m] = s.end_time.split(':').map(Number);
-                const endDate = new Date();
-                endDate.setHours(h, m, 0, 0);
-                return endDate;
+            const overnight = s.end_time < s.start_time; // crosses midnight (mirrors backend)
+
+            if (s.days.includes(today)) {
+                if (overnight) {
+                    // Pre-midnight half, on the start day: ends tomorrow.
+                    if (currentTime >= s.start_time) return endDateFor(s.end_time, 1);
+                } else if (currentTime >= s.start_time && currentTime < s.end_time) {
+                    return endDateFor(s.end_time, 0);
+                }
+            }
+
+            // Post-midnight half of a window that started yesterday: ends today.
+            if (overnight && s.days.includes(yesterday) && currentTime < s.end_time) {
+                return endDateFor(s.end_time, 0);
             }
         }
         return null;
