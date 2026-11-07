@@ -13,15 +13,14 @@ import (
 
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/clock"
+	"focus-lock/backend/logging"
 	"focus-lock/backend/protection"
 )
 
 func debugLog(msg string) {
 	configDir, _ := os.UserConfigDir()
 	logPath := filepath.Join(configDir, "FocusLock", "debug.log")
-	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	defer f.Close()
-	f.WriteString(time.Now().Format(time.RFC3339) + " " + msg + "\n")
+	logging.Write(logPath, msg)
 }
 
 // IsScheduleActive checks if any enabled schedule matches the current time.

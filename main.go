@@ -4,11 +4,12 @@ import (
 	"embed"
 	"fmt"
 	"focus-lock/backend/bridge"
+	"focus-lock/backend/logging"
 	"focus-lock/backend/protection"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
 	"os"
-	"time"
+	"path/filepath"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -48,11 +49,10 @@ func main() {
 		}
 		_ = handle // Leak the handle so it stays held until process exit
 
-		// DEBUG LOG: Confirm startup
+		// DEBUG LOG: Confirm startup (size-capped; see backend/logging)
 		configDir, _ := os.UserConfigDir()
-		f, _ := os.OpenFile(configDir+"\\FocusLock\\ghost_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		f.WriteString(fmt.Sprintf("Ghost started at %s with PID %d\n", time.Now().Format(time.RFC3339), os.Getpid()))
-		f.Close()
+		logging.Write(filepath.Join(configDir, "FocusLock", "ghost_debug.log"),
+			fmt.Sprintf("Ghost started with PID %d", os.Getpid()))
 
 		// NOTE: The Ghost is deliberately NOT a critical process. Marking it critical
 		// (RtlSetProcessIsCritical) bugchecked Windows (0xEF) whenever anything else
