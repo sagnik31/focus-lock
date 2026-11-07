@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/clock"
 	"focus-lock/backend/obfuscation"
@@ -142,6 +143,58 @@ func (a *App) GetConfig() storage.Config {
 // enforcement.
 func (a *App) GetNow() int64 {
 	return clock.Default.Now().UnixMilli()
+}
+
+// GetInsights returns the reflection data for the Insights view as a JSON
+// string (same string-return pattern as ExportSettings, so it needs no
+// generated model). It computes streaks with the shared, tested Go logic and
+// ranks the most-killed apps, so the UI just renders.
+func (a *App) GetInsights() (string, error) {
+	a.Store.Load()
+	st := a.Store.Data.Stats
+
+	cur, longest := storage.StreakFromDays(st.FocusDays, clock.Default.Now())
+
+	type appStat struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	top := make([]appStat, 0, len(st.KillCounts))
+	for name, count := range st.KillCounts {
+		top = append(top, appStat{Name: name, Count: count})
+	}
+	sort.Slice(top, func(i, j int) bool {
+		if top[i].Count != top[j].Count {
+			return top[i].Count > top[j].Count
+		}
+		return top[i].Name < top[j].Name
+	})
+	if len(top) > 8 {
+		top = top[:8]
+	}
+
+	hours := st.KillsByHour
+	if len(hours) != 24 {
+		hours = make([]int, 24)
+	}
+
+	// Most recent sessions first, capped for display.
+	recent := make([]storage.SessionRecord, 0, 10)
+	for i := len(st.Sessions) - 1; i >= 0 && len(recent) < 10; i-- {
+		recent = append(recent, st.Sessions[i])
+	}
+
+	out := map[string]interface{}{
+		"current_streak":      cur,
+		"longest_streak":      longest,
+		"total_focus_seconds": st.TotalFocusSeconds,
+		"session_count":       len(st.Sessions),
+		"kills_by_hour":       hours,
+		"top_killed":          top,
+		"recent_sessions":     recent,
+	}
+	b, err := json.Marshal(out)
+	return string(b), err
 }
 
 // applyOp routes a config mutation through the correct path for the current

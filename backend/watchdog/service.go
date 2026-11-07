@@ -203,12 +203,19 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 				// 5. Deep Enforce
 				enforceDeep(cachedBlockedApps, store)
 				blockSites(store)
+
+				// 6. Mark today as a focus day (for streaks). Cheap: writes at
+				// most once per day (no-op when today is already recorded).
+				store.RecordFocusDay(clock.Default.Now())
 			} else {
 				// Not enforcing. Ensure Unblock.
 				hosts.Unblock()
 
 				// Cleanup expired manual lock
 				if !store.Data.LockEndTime.IsZero() && clock.Default.Now().After(store.Data.LockEndTime) {
+					// Record the completed session for the history/streak view
+					// before we clear the lock (no-op if already recorded).
+					store.RecordManualSessionEnd(clock.Default.Now())
 					store.Data.LockEndTime = time.Time{}
 					store.Data.RemainingDuration = 0
 					store.Save()
@@ -372,7 +379,7 @@ func killProcess(pid uint32, name string, store *storage.Store) {
 	// Terminate
 	if err := windows.TerminateProcess(handle, 1); err == nil {
 		debugLog(fmt.Sprintf("Process terminated: %s [PID: %d]", name, pid))
-		store.IncrementKillCount(name)
+		store.RecordKill(name, clock.Default.Now())
 	} else {
 		debugLog(fmt.Sprintf("TerminateProcess failed for %s: %s", name, err.Error()))
 	}

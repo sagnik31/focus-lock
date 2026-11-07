@@ -19,6 +19,8 @@ export function GetBlockedSites():Promise<Array<string>>;
 
 export function GetConfig():Promise<storage.Config>;
 
+export function GetInsights():Promise<string>;
+
 export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 
 export function GetNow():Promise<number>;

@@ -209,6 +209,7 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 		cfg.LockEndTime = newEnd
 		cfg.RemainingDuration = time.Duration(op.Seconds) * time.Second
 		cfg.EmergencyUnlocksUsed = 0
+		cfg.SessionStart = now // marks the start for history; recorded when the session ends
 	}
 
 	if op.GhostTaskName != "" {

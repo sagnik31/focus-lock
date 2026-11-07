@@ -34,6 +34,10 @@ export function GetConfig() {
   return window['go']['bridge']['App']['GetConfig']();
 }
 
+export function GetInsights() {
+  return window['go']['bridge']['App']['GetInsights']();
+}
+
 export function GetInstalledApps() {
   return window['go']['bridge']['App']['GetInstalledApps']();
 }

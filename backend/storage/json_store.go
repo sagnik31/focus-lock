@@ -25,6 +25,7 @@ type Config struct {
 	PausedUntil          time.Time     `json:"paused_until"`       // Emergency unlock expiry
 	EmergencyUnlocksUsed int           `json:"emergency_unlocks_used"`
 	LastEnforcementError string        `json:"last_enforcement_error"` // Non-empty when enforcement setup failed; surfaced as a UI warning
+	SessionStart         time.Time     `json:"session_start"`          // Start of the current manual session (zero if none); used to record history on end
 }
 
 // Schedule represents a weekly time window for automatic locking
@@ -41,6 +42,22 @@ type Stats struct {
 	KillCounts       map[string]int   `json:"kill_counts"`
 	BlockedFrequency map[string]int   `json:"blocked_frequency"`
 	BlockedDuration  map[string]int64 `json:"blocked_duration"` // Total seconds blocked
+
+	// Reflection data (surfaced in the Insights UI).
+	Sessions          []SessionRecord `json:"sessions"`            // Completed focus sessions, oldest first (capped)
+	FocusDays         []string        `json:"focus_days"`          // Distinct YYYY-MM-DD days with focus activity (capped), for streaks
+	KillsByHour       []int           `json:"kills_by_hour"`       // 24 buckets: kills by local hour-of-day ("you tried X at 2pm")
+	TotalFocusSeconds int64           `json:"total_focus_seconds"` // Lifetime focused time across completed sessions
+}
+
+// SessionRecord is one completed focus session, kept for the history view.
+type SessionRecord struct {
+	Start       time.Time `json:"start"`
+	End         time.Time `json:"end"`
+	DurationSec int64     `json:"duration_sec"`
+	Kind        string    `json:"kind"` // "manual" | "scheduled"
+	AppCount    int       `json:"app_count"`
+	SiteCount   int       `json:"site_count"`
 }
 
 // Methods for Stats
@@ -345,16 +362,6 @@ func (s *Store) computeHMAC(data []byte) string {
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }
-func (s *Store) IncrementKillCount(appName string) {
-	s.mu.Lock()
-	if s.Data.Stats.KillCounts == nil {
-		s.Data.Stats.KillCounts = make(map[string]int)
-	}
-	s.Data.Stats.KillCounts[appName]++
-	s.mu.Unlock()
-	s.Save() // Auto-save on stats update
-}
-
 func (s *Store) UpdateBlockedStats(apps []string, durationSec int) {
 	s.mu.Lock()
 	if s.Data.Stats.BlockedFrequency == nil {

@@ -6,11 +6,12 @@ import { TimeSeeker } from './TimeSeeker';
 import { WebsiteSelector } from './WebsiteSelector';
 import { ScheduleList } from './ScheduleList';
 import { ImportModal } from './ImportModal';
+import { InsightsModal } from './Insights';
 import { useState } from "react";
 import logo from '../assets/logo.png';
 import {
     Download, Check, AlertTriangle, Lock, ArrowLeft, Search, Trash2,
-    Ban, ChevronDown, Plus,
+    Ban, ChevronDown, Plus, BarChart3,
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -90,6 +91,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const [showDetails, setShowDetails] = useState(false);
     const [importSuccess, setImportSuccess] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [showInsights, setShowInsights] = useState(false);
 
     if (!config) return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
@@ -114,6 +116,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         </h1>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowInsights(true)}
+                            aria-label="View insights"
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 bg-slate-800/50 border-slate-700/50 text-slate-300 hover:bg-blue-600/20 hover:border-blue-500/50 hover:text-blue-400 backdrop-blur-sm"
+                        >
+                            <BarChart3 className="w-3.5 h-3.5" />
+                            Insights
+                        </button>
                         <button
                             onClick={() => setShowImportModal(true)}
                             aria-label="Import settings"
@@ -390,6 +400,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                     onImport={handleImportSettings}
                     onSuccess={() => { setImportSuccess(true); setTimeout(() => setImportSuccess(false), 3000); }}
                 />
+
+                {/* Insights Modal */}
+                {showInsights && (
+                    <InsightsModal onClose={() => setShowInsights(false)} appMap={appMap} />
+                )}
 
                 {/* Confirmation Modal */}
                 {

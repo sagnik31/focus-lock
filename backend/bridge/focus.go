@@ -3,6 +3,7 @@ package bridge
 import (
 	"fmt"
 	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/clock"
 	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
@@ -84,6 +85,11 @@ func (a *App) StopFocus() error {
 	if err := a.applyOp(storage.Operation{Type: storage.OpStopFocus}); err != nil {
 		return err
 	}
+
+	// Record the completed session for history/streaks. No-op if the Ghost's
+	// enforcer already finalised it, or in strong mode where the UI can't sign
+	// (the Ghost records it on its expiry tick instead).
+	a.Store.RecordManualSessionEnd(clock.Default.Now())
 
 	// Reduced mode only: we own the config and the task, so tear the Ghost down
 	// when no schedule still needs it. In strong mode the task is admin-owned
