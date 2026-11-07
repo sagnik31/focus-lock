@@ -122,6 +122,69 @@ func (s *Store) RefreshScheduleQuota(now time.Time) {
 	}
 }
 
+// UpdateScheduleSession records schedule-driven focus as completed sessions, so
+// the history/Insights view counts schedule windows and not only manual timers
+// (previously a schedule window contributed to streaks via focus_days but was
+// never added to the session list). "active" is whether any schedule window
+// currently covers now:
+//
+//   - Rising edge (active, none in progress): stamp ScheduleSessionStart.
+//   - Falling edge (inactive, one in progress): append a completed "scheduled"
+//     SessionRecord and add its duration to the lifetime total.
+//
+// It reloads and writes only on an edge, so it is cheap to call every tick and
+// idempotent across the UI+Ghost enforcers (whichever observes the edge first
+// records it; the other reloads and sees nothing to do). Only a signer persists.
+func (s *Store) UpdateScheduleSession(now time.Time, active bool) {
+	if !s.canSign {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.loadInternal()
+	if recordScheduleSessionEdge(&s.Data, now, active) {
+		_ = s.saveInternal()
+	}
+}
+
+// recordScheduleSessionEdge advances the schedule-session state machine on cfg
+// and reports whether cfg changed (so callers persist only on an edge). It is
+// pure (no I/O), so the edge logic is unit-tested directly without touching the
+// signed store or the registry backup. A zero-length window (rising and falling
+// on the same instant) clears the stamp without recording a session.
+func recordScheduleSessionEdge(cfg *Config, now time.Time, active bool) bool {
+	inProgress := !cfg.ScheduleSessionStart.IsZero()
+	switch {
+	case active && !inProgress:
+		cfg.ScheduleSessionStart = now
+		return true
+
+	case !active && inProgress:
+		start := cfg.ScheduleSessionStart
+		cfg.ScheduleSessionStart = time.Time{}
+		dur := int64(now.Sub(start).Seconds())
+		if dur <= 0 {
+			return true // nothing worth recording; just clear the stamp
+		}
+		cfg.Stats.Sessions = append(cfg.Stats.Sessions, SessionRecord{
+			Start:       start,
+			End:         now,
+			DurationSec: dur,
+			Kind:        "scheduled",
+			AppCount:    len(cfg.BlockedApps),
+			SiteCount:   len(cfg.BlockedSites),
+		})
+		if len(cfg.Stats.Sessions) > maxSessions {
+			cfg.Stats.Sessions = cfg.Stats.Sessions[len(cfg.Stats.Sessions)-maxSessions:]
+		}
+		cfg.Stats.TotalFocusSeconds += dur
+		return true
+
+	default:
+		return false
+	}
+}
+
 // StreakFromDays computes the current and longest daily streaks from a set of
 // YYYY-MM-DD markers (duplicates and order do not matter). The current streak
 // is the run of consecutive days ending today or yesterday (a one-day grace so

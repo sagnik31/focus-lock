@@ -169,7 +169,12 @@ export function InsightsModal({ onClose, appMap }: InsightsModalProps) {
                                     <div className="space-y-1.5">
                                         {data.recent_sessions.map((s, i) => (
                                             <div key={i} className="flex items-center justify-between bg-slate-800/40 rounded-lg px-3 py-2 text-sm">
-                                                <span className="text-slate-300">{formatWhen(s.start)}</span>
+                                                <span className="flex items-center gap-2">
+                                                    <span className="text-slate-300">{formatWhen(s.start)}</span>
+                                                    <span className="text-[10px] uppercase tracking-wide text-slate-500 border border-white/10 rounded px-1.5 py-0.5">
+                                                        {s.kind === 'scheduled' ? 'Scheduled' : 'Manual'}
+                                                    </span>
+                                                </span>
                                                 <span className="text-slate-400 tabular-nums">{formatDuration(s.duration_sec)}</span>
                                             </div>
                                         ))}

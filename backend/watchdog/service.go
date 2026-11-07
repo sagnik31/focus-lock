@@ -186,6 +186,12 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 				store.RefreshScheduleQuota(clock.Default.Now())
 			}
 
+			// 2c. Record schedule-driven focus as sessions (history/Insights):
+			// a schedule window counts as a completed session on its falling
+			// edge, not only toward streaks. Called every tick (including when
+			// idle) so the falling edge is always observed.
+			store.UpdateScheduleSession(clock.Default.Now(), scheduleActive)
+
 			// 3. Check Pause
 			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				debugLog("Emergency Unlocked (Paused). Unblocking hosts.")
