@@ -1,21 +1,23 @@
 # Focus Lock - consolidated one-time enforcement setup (requires admin)
 #
 # This is the single elevated setup step, run automatically by the bundled
-# installer (build/installer/focus-lock.iss) and usable by hand. It replaces the
+# installer (installer/focus-lock.iss) and usable by hand. It replaces the
 # manual "open an admin PowerShell and run several scripts" onboarding: one
 # elevated pass provisions everything the enforcer needs.
 #
 # Steps (all idempotent, safe to re-run):
-#   1. Add a Microsoft Defender exclusion for %APPDATA%\FocusLock so the staged
-#      enforcer copy is not quarantined.
-#   2. Stage the enforcer ("Ghost") exe at %APPDATA%\FocusLock\Bin\FocusLockGhost.exe
-#      (copied from the installed UI exe), the fixed path the app expects
-#      (backend/obfuscation/obfuscator.go).
-#   3. Register the FocusLockGhost scheduled task from the SAME definition the
-#      app uses (backend/scheduler/service.go): logon trigger, highest
+#   1. Add Microsoft Defender exclusions for the app's install folder and
+#      %APPDATA%\FocusLock so the enforcer exe isn't quarantined.
+#   2. Register the "FocusLock Enforcer" scheduled task from the SAME definition
+#      the app uses (backend/scheduler/service.go): logon trigger, highest
 #      privileges, AC/battery, no time limit, 1-minute auto-relaunch repetition.
-#   4. Provision the tamper-protection HMAC secret in HKLM (ACL: SYSTEM +
+#      The task runs the installed app exe itself (with --enforce) - there is no
+#      separate staged or hidden copy.
+#   3. Provision the tamper-protection HMAC secret in HKLM (ACL: SYSTEM +
 #      Administrators only) and mark strong mode as provisioned.
+#
+# On upgrade it also removes the old "FocusLockGhost" task and the stale
+# %APPDATA%\FocusLock\Bin copy left by older builds.
 #
 # Strong mode assumes the account is a local administrator (so HighestAvailable
 # runs elevated and can read the HKLM secret). On a standard-user account the
@@ -53,16 +55,18 @@ if (-not (Test-Admin)) {
     return
 }
 
-$taskName = 'FocusLockGhost'
+$taskName = 'FocusLock Enforcer'
+$legacyTaskName = 'FocusLockGhost'   # pre-rename task from older builds
 $flDir = Join-Path $AppData 'FocusLock'
-$ghostDir = Join-Path $flDir 'Bin'
-$ghostExe = Join-Path $ghostDir 'FocusLockGhost.exe'
+$legacyBinDir = Join-Path $flDir 'Bin'   # old staged-exe location, removed on upgrade
 $base = 'HKLM:\SOFTWARE\FocusLock'
 
 # --------------------------------------------------------------------------
 if ($Uninstall) {
     Write-Host "[setup] Removing Focus Lock enforcement..." -ForegroundColor Cyan
     & schtasks /delete /tn $taskName /f 2>$null
+    & schtasks /delete /tn $legacyTaskName /f 2>$null
+    & schtasks /delete /tn 'FocusLockLauncher' /f 2>$null   # legacy UAC-bypass launcher from older builds
     try { Remove-Item -Path $base -Recurse -Force -ErrorAction Stop } catch {}
     try { Remove-MpPreference -ExclusionPath $flDir -ErrorAction Stop } catch {}
     try { Remove-Item -Path $flDir -Recurse -Force -ErrorAction Stop } catch {}
@@ -72,32 +76,30 @@ if ($Uninstall) {
 }
 
 # --------------------------------------------------------------------------
-# 1. Defender exclusion (best-effort: may be blocked by policy / unavailable).
-try {
-    Add-MpPreference -ExclusionPath $flDir -ErrorAction Stop
-    Write-Host "[setup] Defender exclusion added for $flDir." -ForegroundColor Green
-} catch {
-    Write-Warning "Could not add a Defender exclusion ($($_.Exception.Message)). Enforcement still works; add it manually if the enforcer gets quarantined."
-}
-
-# 2. Stage the enforcer exe at the fixed path the app expects.
+# Validate the installed exe up front: the task runs it directly and the
+# Defender exclusion covers the folder it lives in.
 if (-not $ExePath) { throw "Missing -ExePath (path to the installed focus-lock.exe)." }
 if (-not (Test-Path $ExePath)) { throw "Installed exe not found: $ExePath" }
-New-Item -ItemType Directory -Force -Path $ghostDir | Out-Null
-try {
-    if (Test-Path $ghostExe) {
-        $old = "$ghostExe.old"
-        Remove-Item $old -Force -ErrorAction SilentlyContinue
-        Rename-Item $ghostExe $old -ErrorAction Stop  # a running Ghost holds the file; rename aside
+$exeDir = Split-Path -Parent $ExePath
+
+# 1. Defender exclusions (best-effort: may be blocked by policy / unavailable).
+#    Exclude the install folder (the enforcer exe) and the data folder.
+foreach ($p in @($exeDir, $flDir)) {
+    try {
+        Add-MpPreference -ExclusionPath $p -ErrorAction Stop
+        Write-Host "[setup] Defender exclusion added for $p." -ForegroundColor Green
+    } catch {
+        Write-Warning "Could not add a Defender exclusion for $p ($($_.Exception.Message)). Enforcement still works; add it manually if the enforcer gets quarantined."
     }
-    Copy-Item $ExePath $ghostExe -Force
-    Write-Host "[setup] Enforcer staged -> $ghostExe" -ForegroundColor Green
-} catch {
-    if (-not (Test-Path $ghostExe)) { throw "Could not stage the enforcer exe: $($_.Exception.Message)" }
-    Write-Warning "Kept the existing enforcer exe (in use); it refreshes on the next reboot."
 }
 
-# 3. Register the enforcement task (must match taskXMLTemplate in backend/scheduler/service.go).
+# 2. Remove leftovers from older ("Ghost") builds: the pre-rename task and the
+#    staged exe copy. Best-effort; a no-op when they don't exist.
+& schtasks /delete /tn $legacyTaskName /f 2>$null
+try { Remove-Item -Path $legacyBinDir -Recurse -Force -ErrorAction Stop } catch {}
+
+# 3. Register the enforcement task (must match taskXMLTemplate in
+#    backend/scheduler/service.go). The task runs the installed exe directly.
 if (-not $UserSid) { $UserSid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value }
 $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -131,7 +133,7 @@ $xml = @"
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>"$ghostExe"</Command>
+      <Command>"$ExePath"</Command>
       <Arguments>--enforce</Arguments>
     </Exec>
   </Actions>

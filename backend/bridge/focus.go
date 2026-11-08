@@ -1,10 +1,8 @@
 package bridge
 
 import (
-	"fmt"
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/clock"
-	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
 	"os"
@@ -13,30 +11,20 @@ import (
 
 // StartFocus starts a focus session for the given duration.
 //
-// The side effects (set up the obfuscated Ghost exe, ensure the scheduled task
-// exists, spawn the Ghost) are the UI's job and need no secret. The actual lock
-// state is committed through applyOp: in strong mode that means the just-spawned
-// elevated Ghost writes and signs it; in reduced mode the UI signs it directly.
+// The side effects (ensure the scheduled task exists, spawn the enforcer) are the
+// UI's job and need no secret. The actual lock state is committed through applyOp:
+// in strong mode that means the just-spawned elevated enforcer writes and signs
+// it; in reduced mode the UI signs it directly.
 func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
 
-	var taskName, ghostExe string
-
-	// Reuse an existing Ghost (e.g. from a schedule) or set one up.
-	if a.Store.Data.GhostTaskName != "" && a.Store.Data.GhostExePath != "" {
-		taskName = a.Store.Data.GhostTaskName
-		ghostExe = a.Store.Data.GhostExePath
-	} else {
-		currentExe, err := os.Executable()
-		if err != nil {
-			return err
-		}
-		taskName = obfuscation.GenerateTaskName()
-		ghostExe, err = obfuscation.SetupGhostExecutable(currentExe, taskName)
-		if err != nil {
-			return fmt.Errorf("obfuscation setup failed: %w", err)
-		}
+	// The enforcer runs from the installed app exe itself (no staged copy).
+	currentExe, err := os.Executable()
+	if err != nil {
+		return err
 	}
+	taskName := scheduler.EnforcerTaskName
+	ghostExe := currentExe
 
 	// Enable reboot persistence if a correct task isn't already installed.
 	if !scheduler.PersistenceCurrent(ghostExe, taskName) {
@@ -107,9 +95,8 @@ func (a *App) StopFocus() error {
 			if a.Store.Data.GhostTaskName != "" {
 				_ = scheduler.DisablePersistence(a.Store.Data.GhostTaskName)
 			}
-			if a.Store.Data.GhostExePath != "" {
-				obfuscation.CleanupGhostExecutable(a.Store.Data.GhostExePath)
-			}
+			// The enforcer runs from the installed app exe; there is no staged
+			// copy to delete here (deleting it would remove the app itself).
 			a.Store.Data.GhostTaskName = ""
 			a.Store.Data.GhostExePath = ""
 			_ = a.Store.Save()

@@ -5,9 +5,10 @@
 # shortcut always launches the newest build. Invoked automatically by the
 # pre-push git hook (scripts/hooks/pre-push); can also be run by hand.
 #
-# The enforcer ("Ghost") is staged here but applies on the NEXT REBOOT: it runs
-# elevated and denies its own termination (the anti-kill protection), so a
-# running Ghost can't be force-restarted. The UI and shortcut update immediately.
+# The enforcer is the same exe as the UI, run with --enforce. Updating the exe
+# below updates both; the enforcer change applies on the NEXT REBOOT, because the
+# running enforcer holds the old file until then. The UI and shortcut are live
+# immediately.
 
 #requires -Version 5
 $ErrorActionPreference = 'Stop'
@@ -26,10 +27,10 @@ $built = Join-Path $repoRoot 'build\bin\focus-lock.exe'
 if (-not (Test-Path $built)) { throw "Build output not found: $built" }
 
 # --- Stable deploy location the shortcut points at ---
-# %APPDATA%\FocusLock, not %LOCALAPPDATA%: this folder already carries the
-# Defender exclusion from the one-time setup (it holds the Ghost), so the UI exe
-# isn't quarantined here. A previous %LOCALAPPDATA%\FocusLock build was removed
-# by Defender within minutes because that path wasn't excluded.
+# %APPDATA%\FocusLock, not %LOCALAPPDATA%: this folder carries the Defender
+# exclusion from the one-time setup, so the exe isn't quarantined here. A previous
+# %LOCALAPPDATA%\FocusLock build was removed by Defender within minutes because
+# that path wasn't excluded.
 $deployDir = Join-Path $env:APPDATA 'FocusLock'
 $deployExe = Join-Path $deployDir 'focus-lock.exe'
 New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
@@ -51,23 +52,12 @@ catch {
     Write-Warning "Could not update $deployExe; it will refresh on the next deploy."
 }
 
-# 2. Stage the newest enforcer. The running Ghost holds its own exe, so rename
-#    the old one aside and drop the new build in place; the next reboot runs it.
-$ghostDir = Join-Path $env:APPDATA 'FocusLock\Bin'
-$ghostExe = Join-Path $ghostDir 'FocusLockGhost.exe'
-if (Test-Path $ghostDir) {
-    try {
-        if (Test-Path $ghostExe) {
-            $old = "$ghostExe.old"
-            Remove-Item $old -Force -ErrorAction SilentlyContinue
-            Rename-Item $ghostExe $old -ErrorAction Stop
-        }
-        Copy-Item $built $ghostExe -Force
-        Write-Host "[deploy] Enforcer staged (applies on next reboot)" -ForegroundColor Green
-    }
-    catch {
-        Write-Warning "Could not stage the enforcer exe; it will refresh on the next reboot or when a session next starts it fresh."
-    }
+# 2. Remove the stale staged-enforcer copy from older ("Ghost") builds. The
+#    enforcer now runs from the UI exe updated above, so the Bin copy is dead.
+$legacyBinDir = Join-Path $env:APPDATA 'FocusLock\Bin'
+if (Test-Path $legacyBinDir) {
+    Remove-Item $legacyBinDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "[deploy] Removed stale enforcer copy -> $legacyBinDir" -ForegroundColor Yellow
 }
 
 # 3. Create/refresh the desktop shortcut -> the stable UI path.

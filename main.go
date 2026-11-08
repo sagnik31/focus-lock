@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"focus-lock/backend/bridge"
 	"focus-lock/backend/logging"
-	"focus-lock/backend/protection"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
 	"os"
@@ -21,12 +20,10 @@ import (
 var assets embed.FS
 
 func main() {
-	// Enable Anti-Termination Protection
-	// This prevents the user from killing the process via Task Manager
-	if err := protection.ProtectProcess(); err != nil {
-		fmt.Printf("Warning: Failed to enable process protection: %v\n", err)
-		// We initiate it but don't crash if it fails (e.g. dev environment restrictions)
-	}
+	// The enforcer is deliberately killable. We do NOT deny PROCESS_TERMINATE:
+	// if the user ends it from Task Manager, the scheduled task relaunches it
+	// within a minute (with the lock state intact), which is what makes killing
+	// it pointless without the app behaving like self-defending malware.
 
 	// 1. Check for "--enforce" flag (Ghost Mode)
 	// We check this FIRST because the Ghost process runs in the background and

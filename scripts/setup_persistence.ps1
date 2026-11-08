@@ -1,9 +1,10 @@
 # Focus Lock - one-time enforcement setup (requires admin)
 #
-# Registers the FocusLockGhost scheduled task from the SAME definition the app
-# uses (backend/scheduler/service.go): runs the enforcer at logon with highest
-# privileges, on AC or battery, with no time limit, and with a 1-minute
-# repetition so a killed enforcer is relaunched within ~1 minute.
+# Registers the "FocusLock Enforcer" scheduled task from the SAME definition the
+# app uses (backend/scheduler/service.go): runs the enforcer (the installed app
+# exe, with --enforce) at logon with highest privileges, on AC or battery, with
+# no time limit, and a 1-minute repetition so a killed enforcer is relaunched
+# within ~1 minute. On upgrade it removes the old "FocusLockGhost" task.
 #
 # It also provisions the tamper-protection secret in HKLM so the config's HMAC
 # key is no longer readable by the (non-admin) user it enforces. The secret
@@ -45,12 +46,18 @@ if (-not (Test-Admin)) {
     return
 }
 
-$taskName = 'FocusLockGhost'
-$exe = Join-Path $env:APPDATA 'FocusLock\Bin\FocusLockGhost.exe'
+$taskName = 'FocusLock Enforcer'
+$legacyTaskName = 'FocusLockGhost'   # pre-rename task from older builds
+$exe = Join-Path $env:APPDATA 'FocusLock\focus-lock.exe'
 if (-not (Test-Path $exe)) {
-    throw "Enforcer not found at $exe. Open Focus Lock once (or run scripts\deploy.ps1) so it is staged, then re-run this."
+    throw "Focus Lock exe not found at $exe. Run scripts\deploy.ps1 (or install the app) so it is in place, then re-run this."
 }
 $sid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+
+# Remove leftovers from older ("Ghost") builds: the pre-rename task and the
+# staged exe copy. Best-effort; a no-op when they don't exist.
+& schtasks /delete /tn $legacyTaskName /f 2>$null
+try { Remove-Item -Path (Join-Path $env:APPDATA 'FocusLock\Bin') -Recurse -Force -ErrorAction Stop } catch {}
 
 # Must match taskXMLTemplate in backend/scheduler/service.go.
 $xml = @"

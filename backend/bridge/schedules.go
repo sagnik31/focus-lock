@@ -1,7 +1,6 @@
 package bridge
 
 import (
-	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
 	"os"
@@ -36,21 +35,20 @@ func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 	// Spawn Ghost if enabled schedules exist but no Ghost is set up yet.
 	a.Store.Load()
 	if hasEnabledSchedules && a.Store.Data.GhostTaskName == "" {
+		// The enforcer runs from the installed app exe itself (no staged copy).
 		currentExe, err := os.Executable()
 		if err == nil {
-			taskName := obfuscation.GenerateTaskName()
-			ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
-			if err == nil {
-				// Skip re-registration when a correct task already exists; the
-				// non-elevated UI can't overwrite it (would be "Access is denied").
-				if !scheduler.PersistenceCurrent(ghostExe, taskName) {
-					a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
-				}
-				// Spawn first so a strong-mode Ghost is up to receive the next op.
-				a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
-				// Record where the Ghost lives (routed through the policy).
-				_ = a.applyOp(storage.Operation{Type: storage.OpSetGhostInfo, GhostTaskName: taskName, GhostExePath: ghostExe})
+			taskName := scheduler.EnforcerTaskName
+			ghostExe := currentExe
+			// Skip re-registration when a correct task already exists; the
+			// non-elevated UI can't overwrite it (would be "Access is denied").
+			if !scheduler.PersistenceCurrent(ghostExe, taskName) {
+				a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\install_setup.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
 			}
+			// Spawn first so a strong-mode enforcer is up to receive the next op.
+			a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
+			// Record where the enforcer lives (routed through the policy).
+			_ = a.applyOp(storage.Operation{Type: storage.OpSetGhostInfo, GhostTaskName: taskName, GhostExePath: ghostExe})
 		}
 	}
 

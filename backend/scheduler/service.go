@@ -12,7 +12,13 @@ import (
 	"unicode/utf16"
 )
 
-// taskXMLTemplate defines the Ghost task. It is registered from XML rather than
+// EnforcerTaskName is the scheduled task that relaunches the enforcer when it is
+// killed. It is an honest, user-visible name (shown in Task Scheduler). The
+// pre-rename "FocusLockGhost" task from older builds is removed by the elevated
+// setup scripts on upgrade.
+const EnforcerTaskName = "FocusLock Enforcer"
+
+// taskXMLTemplate defines the enforcer task. It is registered from XML rather than
 // plain schtasks flags because schtasks cannot express two things we rely on:
 //
 //  1. Power conditions. The schtasks defaults would end enforcement: "Stop if

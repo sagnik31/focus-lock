@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/clock"
-	"focus-lock/backend/obfuscation"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
 	"focus-lock/backend/watchdog"
@@ -41,8 +40,10 @@ func (a *App) Startup(ctx context.Context) {
 	// loop (it cannot sign). Its only job here is to make sure the Ghost is
 	// running; everything else is driven through the request channel.
 	if !a.Store.CanSign() {
-		if !isGhostProcessRunning() && a.Store.Data.GhostExePath != "" && a.Store.Data.GhostTaskName != "" {
-			_ = spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName)
+		if !isGhostProcessRunning() {
+			if currentExe, err := os.Executable(); err == nil {
+				_ = spawnGhost(currentExe, scheduler.EnforcerTaskName)
+			}
 		}
 		return
 	}
@@ -85,42 +86,23 @@ func (a *App) Startup(ctx context.Context) {
 		// is running. This is the immediate-recovery path when the UI is open: if the
 		// Ghost was killed, we relaunch it here instead of waiting up to a minute for
 		// the scheduled task's repetition trigger to do it.
-		ghostRunning := isGhostProcessRunning()
-
-		if !ghostRunning {
-			// Ghost is NOT running. We need to spawn one.
-			// Check if Ghost executable exists (it may have been deleted/cleaned up)
-			ghostExeExists := false
-			if a.Store.Data.GhostExePath != "" {
-				if _, err := os.Stat(a.Store.Data.GhostExePath); err == nil {
-					ghostExeExists = true
+		if !isGhostProcessRunning() {
+			// The enforcer runs from the installed app exe itself (no staged
+			// copy). Spawn it and make sure reboot persistence is in place.
+			currentExe, err := os.Executable()
+			if err == nil {
+				taskName := scheduler.EnforcerTaskName
+				a.Store.Data.GhostTaskName = taskName
+				a.Store.Data.GhostExePath = currentExe
+				a.Store.Data.LastEnforcementError = ""
+				a.Store.Save()
+				// Only (re-)register when a correct task isn't already installed:
+				// the non-elevated UI can't overwrite one, so attempting it would
+				// just fail with "Access is denied".
+				if !scheduler.PersistenceCurrent(currentExe, taskName) {
+					a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\install_setup.ps1 as administrator)", scheduler.EnablePersistence(currentExe, taskName))
 				}
-			}
-
-			if a.Store.Data.GhostTaskName == "" || !ghostExeExists {
-				// No Ghost was ever set up OR the exe is missing. Create a new one.
-				currentExe, err := os.Executable()
-				if err == nil {
-					taskName := obfuscation.GenerateTaskName()
-					ghostExe, err := obfuscation.SetupGhostExecutable(currentExe, taskName)
-					if err == nil {
-						a.Store.Data.GhostTaskName = taskName
-						a.Store.Data.GhostExePath = ghostExe
-						a.Store.Data.LastEnforcementError = ""
-						a.Store.Save()
-						// Only (re-)register when a correct task isn't already
-						// installed: the non-elevated UI can't overwrite one, so
-						// attempting it would just fail with "Access is denied".
-						if !scheduler.PersistenceCurrent(ghostExe, taskName) {
-							a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\setup_persistence.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
-						}
-						a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
-					}
-				}
-			} else {
-				// Ghost was set up before (e.g., before reboot) but isn't running.
-				// Re-spawn it using the existing task.
-				a.warnEnforcement("Enforcement process failed to start", spawnGhost(a.Store.Data.GhostExePath, a.Store.Data.GhostTaskName))
+				a.warnEnforcement("Enforcement process failed to start", spawnGhost(currentExe, taskName))
 			}
 		}
 	}
