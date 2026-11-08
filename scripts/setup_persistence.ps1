@@ -56,7 +56,11 @@ $sid = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
 
 # Remove leftovers from older ("Ghost") builds: the pre-rename task and the
 # staged exe copy. Best-effort; a no-op when they don't exist.
-& schtasks /delete /tn $legacyTaskName /f 2>$null
+# (Not `schtasks /delete ... 2>$null`: under ErrorActionPreference=Stop, Windows
+# PowerShell 5.1 turns the "task not found" stderr into a terminating error.)
+if (Get-ScheduledTask -TaskName $legacyTaskName -ErrorAction SilentlyContinue) {
+    Unregister-ScheduledTask -TaskName $legacyTaskName -Confirm:$false
+}
 try { Remove-Item -Path (Join-Path $env:APPDATA 'FocusLock\Bin') -Recurse -Force -ErrorAction Stop } catch {}
 
 # Must match taskXMLTemplate in backend/scheduler/service.go.

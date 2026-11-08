@@ -1,8 +1,8 @@
 # Focus Lock - build the bundled installer
 #
 # Runs `wails build` to produce build\bin\focus-lock.exe, then compiles the
-# Inno Setup script (build\installer\focus-lock.iss) into a single Setup.exe at
-# build\installer\Output.
+# Inno Setup script (installer\focus-lock.iss) into a single Setup.exe at
+# installer\Output.
 #
 # Prereqs: Go, Node, the Wails CLI, and Inno Setup 6 (https://jrsoftware.org/,
 # which provides ISCC.exe). Run from anywhere in the repo.
@@ -12,7 +12,8 @@
 #requires -Version 5
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (& git rev-parse --show-toplevel 2>$null)
+$repoRoot = $null
+try { $repoRoot = (& git rev-parse --show-toplevel 2>$null) } catch {}
 if (-not $repoRoot) { $repoRoot = Split-Path -Parent $PSScriptRoot }
 Set-Location $repoRoot
 
@@ -29,7 +30,8 @@ $iscc = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Source
 if (-not $iscc) {
     foreach ($c in @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "$env:ProgramFiles\Inno Setup 6\ISCC.exe")) {
+        "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")) {   # per-user (winget --scope user) install
         if (Test-Path $c) { $iscc = $c; break }
     }
 }
