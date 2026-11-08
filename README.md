@@ -96,9 +96,9 @@ wails dev
 ### Install (recommended): the bundled installer
 
 Editing the `hosts` file and keeping enforcement running across reboots require a one-time
-setup with administrator privileges (a Defender exclusion, the staged enforcer, a scheduled
-task, and a tamper-protection secret in `HKLM`). The installer does all of it in one pass,
-so there is no manual PowerShell step.
+setup with administrator privileges (Defender exclusions, the `FocusLock Enforcer` scheduled
+task that runs the installed exe with `--enforce`, and a tamper-protection secret in
+`HKLM`). The installer does all of it in one pass, so there is no manual PowerShell step.
 
 Build the installer (needs the [Inno Setup 6](https://jrsoftware.org/isdl.php) compiler on
 `PATH` or in its default location, plus Go/Node/Wails):
@@ -108,9 +108,23 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
 This produces `installer\Output\FocusLock-Setup-<version>.exe`. Run it, approve the single
-UAC prompt, and the one-time enforcement setup runs automatically. Uninstalling (from
-**Apps & features**) removes the scheduled task, the `HKLM` secret, the Defender exclusion,
-and `%APPDATA%\FocusLock`.
+UAC prompt, and the one-time enforcement setup runs automatically and starts the enforcer
+(no reboot needed). If that setup step fails, Setup says so and the app runs in reduced mode;
+the details are in `%TEMP%\FocusLock-setup.log`.
+
+Uninstalling (from **Settings → Apps**) stops the enforcer and the app, removes the scheduled
+task, any active `hosts`-file block, the `HKLM` and `HKCU` state, both Defender exclusions,
+and `%APPDATA%\FocusLock` (log: `%TEMP%\FocusLock-uninstall.log`).
+
+A manual verification checklist for the installer is in
+[`installer/TESTING.md`](installer/TESTING.md).
+
+### Updating
+
+There is no automatic update yet (planned). To update, build or download a newer
+`FocusLock-Setup-<version>.exe` and run it over the existing install: it stops the enforcer,
+replaces the exe, re-registers the task and starts it again, keeping your settings, history
+and tamper-protection secret.
 
 > Strong (tamper-resistant) mode assumes the signed-in user is a local administrator. On a
 > standard-user account the app still installs and runs, but stays in reduced mode (a
@@ -119,8 +133,9 @@ and `%APPDATA%\FocusLock`.
 ### Alternative: manual one-time setup
 
 Without the installer, run the consolidated setup script once from the `scripts` folder — it
-self-elevates (one UAC prompt) and performs the same steps. Open the app or run
-`scripts\deploy.ps1` first so the UI exe exists, then:
+self-elevates (one UAC prompt) and performs the same steps for whichever exe you point it at
+(the task runs that exe with `--enforce`). Run `scripts\deploy.ps1` first so the exe exists
+in `%APPDATA%\FocusLock`, then:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_setup.ps1 -ExePath "$env:APPDATA\FocusLock\focus-lock.exe"
@@ -146,7 +161,7 @@ battery-safe and has no run-time limit, so Windows does not silently interrupt i
 backend/        Go: enforcement, scheduling, storage, system info, Wails bridge
 frontend/       React + TypeScript UI (Vite + Tailwind)
 scripts/        PowerShell helpers for setup, deployment, and git hooks
-installer/      Inno Setup script for the bundled installer
+installer/      Inno Setup script for the bundled installer, plus its test checklist
 main.go         Application entry point
 wails.json      Wails project configuration
 ```
