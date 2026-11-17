@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 
 interface TimeSeekerProps {
     onDurationChange: (h: number, m: number) => void;
@@ -6,51 +6,66 @@ interface TimeSeekerProps {
     initialMinutes?: number;
 }
 
+// Slider steps, finer at the short end where precision matters:
+// 5-30m every 5m, to 1h every 10m, to 2h every 15m, to 6h every 30m, to 24h hourly.
+const TIME_STEPS: number[] = (() => {
+    const steps: number[] = [];
+    for (let m = 5; m <= 30; m += 5) steps.push(m);
+    for (let m = 40; m <= 60; m += 10) steps.push(m);
+    for (let m = 75; m <= 120; m += 15) steps.push(m);
+    for (let m = 150; m <= 360; m += 30) steps.push(m);
+    for (let m = 420; m <= 1440; m += 60) steps.push(m);
+    return steps;
+})();
+
+// Tick labels, placed at the slider position of their actual value. (They
+// used to be spread evenly with justify-between, but the steps are not
+// linear, so "1h" sat where ~3h30m really was.)
+const TICKS: { minutes: number; label: string }[] = [
+    { minutes: 5, label: '5m' },
+    { minutes: 60, label: '1h' },
+    { minutes: 120, label: '2h' },
+    { minutes: 360, label: '6h' },
+    { minutes: 720, label: '12h' },
+    { minutes: 1440, label: '24h' },
+];
+
+// Must match the thumb width in index.css (input[type=range]::-webkit-slider-thumb).
+const THUMB_PX = 24;
+
+// The browser keeps the thumb inside the track, so the thumb centre for a
+// fraction p sits at p * (width - thumb) + thumb / 2, not at p * width.
+const positionFor = (index: number) => {
+    const p = index / (TIME_STEPS.length - 1);
+    return `calc(${p * 100}% + ${(0.5 - p) * THUMB_PX}px)`;
+};
+
+const nearestIndex = (minutes: number) => {
+    let best = 0;
+    TIME_STEPS.forEach((m, i) => {
+        if (Math.abs(m - minutes) < Math.abs(TIME_STEPS[best] - minutes)) best = i;
+    });
+    return best;
+};
+
 export const TimeSeeker: React.FC<TimeSeekerProps> = ({ onDurationChange, onStart, initialMinutes = 15 }) => {
-    // Generate the time steps based on the user's requirements
-    const timeSteps = useMemo(() => {
-        const steps: number[] = [];
+    const [sliderValue, setSliderValue] = useState(() => nearestIndex(initialMinutes));
 
-        // 1. 5m to 30m: 5 min intervals (5, 10, ... 30)
-        for (let m = 5; m <= 30; m += 5) steps.push(m);
-
-        // 2. 30m to 1h: 10 min intervals (40, 50, 60)
-        for (let m = 40; m <= 60; m += 10) steps.push(m);
-
-        // 3. 1h to 2h: 15 min intervals (75, 90, 105, 120)
-        for (let m = 75; m <= 120; m += 15) steps.push(m);
-
-        // 4. 2h to 6h: 30 min intervals (150, 180, ... 360)
-        for (let m = 150; m <= 360; m += 30) steps.push(m);
-
-        // 5. 6h to 24h: 1 hr intervals (420, 480, ... 1440)
-        for (let m = 420; m <= 1440; m += 60) steps.push(m);
-
-        return steps;
-    }, []);
-
-    // Find the closest index for the initial value
-    const initialIndex = useMemo(() => {
-        const idx = timeSteps.findIndex(m => m === initialMinutes);
-        return idx !== -1 ? idx : 0;
-    }, [initialMinutes, timeSteps]);
-
-    const [sliderValue, setSliderValue] = useState(initialIndex);
-
-    // Calculate generic percentage for background gradient
-    const progressPercent = (sliderValue / (timeSteps.length - 1)) * 100;
-
-    const currentMinutes = timeSteps[sliderValue];
+    const progressPercent = (sliderValue / (TIME_STEPS.length - 1)) * 100;
+    const currentMinutes = TIME_STEPS[sliderValue];
     const displayH = Math.floor(currentMinutes / 60);
     const displayM = currentMinutes % 60;
 
+    // Report changes through a ref: the parent passes a new inline callback on
+    // every render, and depending on it re-ran this effect (and re-set the
+    // parent's state) on every render, in a loop.
+    const onChangeRef = useRef(onDurationChange);
+    onChangeRef.current = onDurationChange;
     useEffect(() => {
-        onDurationChange(displayH, displayM);
-    }, [sliderValue, onDurationChange, displayH, displayM]);
+        onChangeRef.current(displayH, displayM);
+    }, [displayH, displayM]);
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setSliderValue(parseInt(e.target.value));
-    };
+    const tickIndexes = useMemo(() => TICKS.map(t => ({ ...t, index: TIME_STEPS.indexOf(t.minutes) })), []);
 
     return (
         <div className="w-full h-full flex flex-col items-center justify-center p-4">
@@ -68,39 +83,37 @@ export const TimeSeeker: React.FC<TimeSeekerProps> = ({ onDurationChange, onStar
             <div className="w-full max-w-xs relative h-12 flex items-center mb-10">
                 {/* Track Background */}
                 <div className="absolute w-full h-2 bg-slate-800/50 rounded-full overflow-hidden border border-white/5">
-                    {/* Progress Fill */}
                     <div
                         className="h-full bg-blue-600 transition-all duration-75 ease-out"
                         style={{ width: `${progressPercent}%` }}
                     />
                 </div>
 
-                {/* Range Input */}
                 <input
                     type="range"
                     min="0"
-                    max={timeSteps.length - 1}
+                    max={TIME_STEPS.length - 1}
                     step="1"
                     value={sliderValue}
-                    onChange={handleChange}
+                    onChange={(e) => setSliderValue(parseInt(e.target.value))}
+                    aria-label="Focus duration"
+                    aria-valuetext={`${displayH} hours ${displayM} minutes`}
                     className="absolute w-full h-2 appearance-none bg-transparent cursor-pointer z-10 focus:outline-none group"
                 />
-
-                {/* Custom Thumb (Pseudo-element via CSS or manual div if needed, but input styles usually cleaner in CSS) 
-                    For simplified React implementation without external CSS dependency for thumb styling tricks, 
-                    we usually rely on standard browser styling or `accent-color`. 
-                    However, `range` inputs are notoriously hard to style identically cross-browser without CSS classes. 
-                    I'll add specific classes in index.css
-                */}
             </div>
 
-            {/* Quick Actions / Ticks labels (Optional visual guide) */}
-            <div className="flex justify-between w-full max-w-xs text-[10px] text-slate-600 font-mono -mt-6 mb-8 px-1">
-                <span>5m</span>
-                <span>30m</span>
-                <span>1h</span>
-                <span>6h</span>
-                <span>24h</span>
+            {/* Tick labels at their real positions; click to jump there */}
+            <div className="relative w-full max-w-xs h-4 text-[10px] text-slate-600 font-mono -mt-6 mb-8">
+                {tickIndexes.map(t => (
+                    <button
+                        key={t.label}
+                        onClick={() => setSliderValue(t.index)}
+                        className={`absolute -translate-x-1/2 hover:text-slate-300 transition-colors ${sliderValue === t.index ? 'text-slate-300' : ''}`}
+                        style={{ left: positionFor(t.index) }}
+                    >
+                        {t.label}
+                    </button>
+                ))}
             </div>
 
             {/* Start Button */}

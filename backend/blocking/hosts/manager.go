@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -186,12 +187,22 @@ func ExpandDomains(inputs []string) []string {
 		}
 	}
 
-	var result []string
+	result := make([]string, 0, len(unique))
 	for k := range unique {
 		result = append(result, k)
 	}
+	// Sorted so the generated hosts block is identical from call to call.
+	// Block compares the new file against the current one to skip no-op
+	// writes; with Go's randomised map order the block differed every time,
+	// so the enforcer rewrote the hosts file and flushed DNS on every tick
+	// (and collided with other readers: "being used by another process").
+	sort.Strings(result)
 	return result
 }
+
+// CleanDomain normalises user input ("https://www.x.com/path", " x.com ")
+// to a bare hostname. It returns "" when the input has no usable host.
+func CleanDomain(input string) string { return cleanDomain(input) }
 
 func cleanDomain(input string) string {
 	input = strings.TrimSpace(input)

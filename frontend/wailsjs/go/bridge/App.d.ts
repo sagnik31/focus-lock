@@ -13,6 +13,8 @@ export function EmergencyUnlock():Promise<void>;
 
 export function ExportSettings():Promise<string>;
 
+export function ForgetRecentSite(arg1:string):Promise<void>;
+
 export function GetBlockCommonVPN():Promise<boolean>;
 
 export function GetBlockedSites():Promise<Array<string>>;
@@ -25,7 +27,11 @@ export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 
 export function GetNow():Promise<number>;
 
+export function GetRecentSites():Promise<Array<string>>;
+
 export function GetSchedules():Promise<Array<storage.Schedule>>;
+
+export function GetSiteGroups():Promise<Array<storage.SiteGroup>>;
 
 export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;
 
@@ -38,6 +44,8 @@ export function RemoveBlockedSite(arg1:string):Promise<void>;
 export function RemoveBlockedSites(arg1:Array<string>):Promise<void>;
 
 export function SaveSchedules(arg1:Array<storage.Schedule>):Promise<void>;
+
+export function SaveSiteGroups(arg1:Array<storage.SiteGroup>):Promise<void>;
 
 export function SetBlockCommonVPN(arg1:boolean):Promise<void>;
 

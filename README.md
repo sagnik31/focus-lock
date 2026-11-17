@@ -30,8 +30,19 @@ lift an active block.
   apps are closed if they are launched during a session.
 - **System-wide website blocking.** Domains are blocked through the Windows `hosts` file,
   so the block applies across every browser, including private/incognito windows.
-- **Category presets.** One-click lists for common categories such as social media,
-  entertainment, gaming, and adult content.
+- **Chrome policy blocking.** During a session the enforcer also adds the blocked sites to
+  Chrome's `URLBlocklist` policy. Chrome's Secure DNS can bypass the `hosts` file, and
+  offline-capable sites can load from cache; the policy blocks them on every visit or
+  refresh regardless. Chrome shows "Managed by your organization" only while a session is
+  active; the policy entries are removed when it ends, and any `URLBlocklist` entries you
+  had before are left alone. A tab that was already open on a site keeps its page until
+  you navigate or refresh it.
+- **Category presets and your own groups.** One-click lists for common categories such as
+  social media, entertainment, gaming, and adult content, plus named groups you create
+  yourself (shown first). Sites you have blocked before appear under "Recently used" so
+  they can be re-added in one click.
+- **Flexible durations.** Pick a preset, type an exact duration, or focus until a chosen
+  date and time.
 - **VPN awareness.** Optionally blocks common VPN applications and domains so a session
   cannot be routed around.
 - **Clock-tamper resistance.** Session timing is checked against network time (NTP) so the

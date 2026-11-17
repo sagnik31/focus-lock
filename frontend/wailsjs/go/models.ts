@@ -1,5 +1,21 @@
 export namespace storage {
 	
+	export class SiteGroup {
+	    id: string;
+	    name: string;
+	    sites: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new SiteGroup(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.sites = source["sites"];
+	    }
+	}
 	export class SessionRecord {
 	    // Go type: time
 	    start: any;
@@ -126,6 +142,8 @@ export namespace storage {
 	    schedule_unlock_window: string;
 	    // Go type: time
 	    schedule_session_start: any;
+	    recent_sites: string[];
+	    site_groups: SiteGroup[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Config(source);
@@ -148,6 +166,8 @@ export namespace storage {
 	        this.session_start = this.convertValues(source["session_start"], null);
 	        this.schedule_unlock_window = source["schedule_unlock_window"];
 	        this.schedule_session_start = this.convertValues(source["schedule_session_start"], null);
+	        this.recent_sites = source["recent_sites"];
+	        this.site_groups = this.convertValues(source["site_groups"], SiteGroup);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -168,6 +188,7 @@ export namespace storage {
 		    return a;
 		}
 	}
+	
 	
 	
 

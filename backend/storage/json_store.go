@@ -35,6 +35,17 @@ type Config struct {
 	SessionStart         time.Time     `json:"session_start"`          // Start of the current manual session (zero if none); used to record history on end
 	ScheduleUnlockWindow string        `json:"schedule_unlock_window"` // Key of the schedule window the emergency-unlock quota is tied to; a change refills the quota (see applyScheduleUnlockReset)
 	ScheduleSessionStart time.Time     `json:"schedule_session_start"` // Start of the in-progress schedule-driven session (zero if none); recorded to history on its falling edge (see UpdateScheduleSession)
+	RecentSites          []string      `json:"recent_sites"`           // Sites the user has blocked, most recent first (capped); powers the "Recently used" list
+	SiteGroups           []SiteGroup   `json:"site_groups"`            // User-defined website sections, shown above the built-in suggestions
+}
+
+// SiteGroup is a user-defined, named set of websites that can be blocked or
+// unblocked together (like the built-in suggestion categories). Groups are
+// presets only: editing or deleting one never changes what is blocked.
+type SiteGroup struct {
+	ID    string   `json:"id"`
+	Name  string   `json:"name"`
+	Sites []string `json:"sites"`
 }
 
 // Schedule represents a weekly time window for automatic locking

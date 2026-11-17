@@ -22,6 +22,10 @@ export function ExportSettings() {
   return window['go']['bridge']['App']['ExportSettings']();
 }
 
+export function ForgetRecentSite(arg1) {
+  return window['go']['bridge']['App']['ForgetRecentSite'](arg1);
+}
+
 export function GetBlockCommonVPN() {
   return window['go']['bridge']['App']['GetBlockCommonVPN']();
 }
@@ -46,8 +50,16 @@ export function GetNow() {
   return window['go']['bridge']['App']['GetNow']();
 }
 
+export function GetRecentSites() {
+  return window['go']['bridge']['App']['GetRecentSites']();
+}
+
 export function GetSchedules() {
   return window['go']['bridge']['App']['GetSchedules']();
+}
+
+export function GetSiteGroups() {
+  return window['go']['bridge']['App']['GetSiteGroups']();
 }
 
 export function GetTopBlockedApps() {
@@ -72,6 +84,10 @@ export function RemoveBlockedSites(arg1) {
 
 export function SaveSchedules(arg1) {
   return window['go']['bridge']['App']['SaveSchedules'](arg1);
+}
+
+export function SaveSiteGroups(arg1) {
+  return window['go']['bridge']['App']['SaveSiteGroups'](arg1);
 }
 
 export function SetBlockCommonVPN(arg1) {

@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
-import { Delete } from 'lucide-react';
+import { Delete, ArrowLeft } from 'lucide-react';
 
 interface InlineKeypadProps {
     onStart: (hours: number, minutes: number) => void;
+    // Returns to the presets screen.
+    onBack?: () => void;
 }
 
-export function InlineKeypad({ onStart }: InlineKeypadProps) {
+export function InlineKeypad({ onStart, onBack }: InlineKeypadProps) {
     const [buffer, setBuffer] = useState("");
 
     const handleNum = (num: string) => {
-        if (buffer.length >= 4) return;
-        setBuffer(prev => prev + num);
+        // Up to 4 digits (HHMM); "00" must not push the buffer past that.
+        setBuffer(prev => (prev + num).slice(0, 4));
     };
 
     const handleBackspace = () => {
@@ -35,6 +37,10 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
     // Keyboard support
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore keys typed into text fields elsewhere on the page (e.g.
+            // the website box), or digits/Enter there would drive the keypad.
+            const t = e.target as HTMLElement | null;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
             if (e.key >= '0' && e.key <= '9') {
                 handleNum(e.key);
             } else if (e.key === 'Backspace') {
@@ -42,7 +48,9 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
             } else if (e.key === 'Enter') {
                 handleOK();
             } else if (e.key === 'Escape') {
-                handleClear();
+                // Escape clears what was typed; on an empty keypad it goes back.
+                if (buffer === "" && onBack) onBack();
+                else handleClear();
             }
         };
 
@@ -117,12 +125,23 @@ export function InlineKeypad({ onStart }: InlineKeypadProps) {
 
             {/* Footer Actions */}
             <div className="flex justify-between items-center px-4 pb-3 pt-0 gap-4 bg-slate-900">
-                <button
-                    onClick={handleClear}
-                    className="text-slate-500 font-bold tracking-wider text-[10px] hover:text-slate-300 py-2 transition-colors"
-                >
-                    CLEAR
-                </button>
+                <div className="flex items-center gap-3">
+                    {onBack && (
+                        <button
+                            onClick={onBack}
+                            className="flex items-center gap-1 text-slate-500 font-bold tracking-wider text-[10px] hover:text-slate-300 py-2 transition-colors"
+                            aria-label="Back to presets"
+                        >
+                            <ArrowLeft className="w-3 h-3" /> BACK
+                        </button>
+                    )}
+                    <button
+                        onClick={handleClear}
+                        className="text-slate-500 font-bold tracking-wider text-[10px] hover:text-slate-300 py-2 transition-colors"
+                    >
+                        CLEAR
+                    </button>
+                </div>
                 <button
                     onClick={handleOK}
                     className="text-blue-400 font-bold tracking-wider text-[10px] hover:text-blue-300 py-2 transition-colors uppercase"

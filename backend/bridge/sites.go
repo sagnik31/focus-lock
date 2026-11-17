@@ -75,3 +75,33 @@ func (a *App) GetBlockCommonVPN() bool {
 	a.Store.Load()
 	return a.Store.Data.BlockCommonVPN
 }
+
+// GetRecentSites returns sites the user has blocked before, most recent first.
+func (a *App) GetRecentSites() []string {
+	a.Store.Load()
+	if a.Store.Data.RecentSites == nil {
+		return []string{}
+	}
+	return a.Store.Data.RecentSites
+}
+
+// ForgetRecentSite removes a site from the "Recently used" history. It does
+// not affect what is blocked.
+func (a *App) ForgetRecentSite(url string) error {
+	return a.applyOp(storage.Operation{Type: storage.OpForgetRecent, URL: url})
+}
+
+// GetSiteGroups returns the user's custom website sections.
+func (a *App) GetSiteGroups() []storage.SiteGroup {
+	a.Store.Load()
+	if a.Store.Data.SiteGroups == nil {
+		return []storage.SiteGroup{}
+	}
+	return a.Store.Data.SiteGroups
+}
+
+// SaveSiteGroups replaces the user's custom website sections. Groups are
+// presets, so this never changes what is currently blocked.
+func (a *App) SaveSiteGroups(groups []storage.SiteGroup) error {
+	return a.applyOp(storage.Operation{Type: storage.OpSaveSiteGroups, SiteGroups: groups})
+}

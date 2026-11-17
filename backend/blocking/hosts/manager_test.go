@@ -55,3 +55,21 @@ func TestExpandDomainsSkipsEmptyAndDedups(t *testing.T) {
 		}
 	}
 }
+
+// The hosts block must be byte-identical across calls, or Block's no-op check
+// never matches and the enforcer rewrites the hosts file on every tick.
+func TestExpandDomainsDeterministic(t *testing.T) {
+	in := []string{"youtube.com", "monkeytype.com", "facebook.com", "reddit.com"}
+	first := ExpandDomains(in)
+	for i := 0; i < 20; i++ {
+		got := ExpandDomains(in)
+		if len(got) != len(first) {
+			t.Fatalf("length changed: %d vs %d", len(got), len(first))
+		}
+		for j := range got {
+			if got[j] != first[j] {
+				t.Fatalf("order changed at %d: %q vs %q", j, got[j], first[j])
+			}
+		}
+	}
+}

@@ -3,6 +3,8 @@ import { storage, sysinfo } from "../../wailsjs/go/models";
 import { AppSelector } from "./AppSelector";
 import { InlineKeypad } from "./InlineKeypad";
 import { TimeSeeker } from './TimeSeeker';
+import { FocusUntil } from './FocusUntil';
+import { PendingSession, formatDuration } from './duration';
 import { WebsiteSelector } from './WebsiteSelector';
 import { ScheduleList } from './ScheduleList';
 import { ImportModal } from './ImportModal';
@@ -27,8 +29,8 @@ interface AppLayoutProps {
     // Session State (Controlled by Parent)
     showConfirm: boolean;
     setShowConfirm: (val: boolean) => void;
-    pendingSession: { h: number, m: number } | null;
-    setPendingSession: (val: { h: number, m: number } | null) => void;
+    pendingSession: PendingSession | null;
+    setPendingSession: (val: PendingSession | null) => void;
 
     // Data
     topApps: sysinfo.AppInfo[];
@@ -51,6 +53,10 @@ interface AppLayoutProps {
 
     // Import Handler
     handleImportSettings: (jsonContent: string) => Promise<void>;
+
+    // Recently used sites + custom site groups
+    handleForgetRecent: (url: string) => void;
+    handleSaveGroups: (groups: storage.SiteGroup[]) => Promise<void>;
 
     // Session-aware mode
     isLocked?: boolean;
@@ -82,10 +88,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     handleAddSites,
     handleRemoveSites,
     handleImportSettings,
+    handleForgetRecent,
+    handleSaveGroups,
     isLocked,
     onBackToFocus
 }) => {
-    const [inputMode, setInputMode] = useState<'slider' | 'keypad'>('slider');
+    const [inputMode, setInputMode] = useState<'slider' | 'keypad' | 'until'>('slider');
     const [activeTab, setActiveTab] = useState<'apps' | 'websites'>('apps');
     const [sessionType, setSessionType] = useState<'manual' | 'scheduled'>('manual');
     const [showDetails, setShowDetails] = useState(false);
@@ -217,31 +225,45 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                                 Set your duration. Once started, focus is enforced until time expires.
                                             </p>
 
-                                            <div className="bg-slate-950/50 rounded-2xl border border-white/5 shadow-inner flex flex-col justify-center relative overflow-hidden h-[320px]">
-                                                {inputMode === 'slider' ? (
-                                                    <>
-                                                        <TimeSeeker
-                                                            onDurationChange={(h, m) => setPendingSession({ h, m })}
-                                                            onStart={() => setShowConfirm(true)} // Trigger confirmation directly
-                                                            initialMinutes={pendingSession ? (pendingSession.h * 60 + pendingSession.m) : 15}
-                                                        />
+                                            {/* Duration mode: presets slider, exact keypad, or an end date/time.
+                                                Always visible, so every mode has a way back. */}
+                                            <div className="flex justify-center mb-3">
+                                                <div role="tablist" aria-label="How to set the duration" className="bg-slate-950/50 p-1 rounded-lg border border-white/5 flex gap-1">
+                                                    {([['slider', 'Presets'], ['keypad', 'Custom'], ['until', 'Until']] as const).map(([mode, label]) => (
                                                         <button
-                                                            onClick={() => setInputMode('keypad')}
-                                                            className="absolute bottom-4 right-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
+                                                            key={mode}
+                                                            role="tab"
+                                                            aria-selected={inputMode === mode}
+                                                            onClick={() => setInputMode(mode)}
+                                                            className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 ${inputMode === mode ? 'bg-slate-700 text-white' : 'text-slate-500 hover:text-slate-200'}`}
                                                         >
-                                                            Custom Time &rarr;
+                                                            {label}
                                                         </button>
-                                                    </>
-                                                ) : (
-                                                    <div className="w-full h-full p-6 flex flex-col items-center justify-center">
-                                                        <InlineKeypad onStart={handleRequestStart} />
-                                                        <button
-                                                            onClick={() => setInputMode('slider')}
-                                                            className="mt-4 text-[10px] font-bold text-slate-500 hover:text-blue-400 uppercase tracking-widest transition-colors"
-                                                        >
-                                                            &larr; Back to Presets
-                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-slate-950/50 rounded-2xl border border-white/5 shadow-inner flex flex-col justify-center relative overflow-hidden h-[340px]">
+                                                {inputMode === 'slider' && (
+                                                    <TimeSeeker
+                                                        onDurationChange={(h, m) => setPendingSession({ h, m })}
+                                                        onStart={() => setShowConfirm(true)} // Trigger confirmation directly
+                                                        initialMinutes={pendingSession && pendingSession.until === undefined ? (pendingSession.h * 60 + pendingSession.m) : 15}
+                                                    />
+                                                )}
+                                                {inputMode === 'keypad' && (
+                                                    <div className="w-full h-full p-3 flex flex-col items-center justify-center">
+                                                        <InlineKeypad onStart={handleRequestStart} onBack={() => setInputMode('slider')} />
                                                     </div>
+                                                )}
+                                                {inputMode === 'until' && (
+                                                    <FocusUntil
+                                                        onStart={(until) => {
+                                                            const mins = Math.max(1, Math.round((until - Date.now()) / 60000));
+                                                            setPendingSession({ h: Math.floor(mins / 60), m: mins % 60, until });
+                                                            setShowConfirm(true);
+                                                        }}
+                                                    />
                                                 )}
                                             </div>
                                         </div>
@@ -374,9 +396,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     onRemove={handleRemoveSite}
                                     onAddSites={handleAddSites}
                                     onRemoveSites={handleRemoveSites}
-                                    blockVPN={config.block_common_vpn || true}
+                                    blockVPN={config.block_common_vpn}
                                     onToggleVPN={handleToggleVPN}
                                     isLocked={isLocked}
+                                    recentSites={config.recent_sites || []}
+                                    onForgetRecent={handleForgetRecent}
+                                    siteGroups={config.site_groups || []}
+                                    onSaveGroups={handleSaveGroups}
                                 />
                             )}
                         </div>
@@ -417,7 +443,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     </div>
                                     <h3 className="text-lg font-bold text-white">Confirm Lock</h3>
                                     <p className="text-slate-400 text-sm">
-                                        You are about to enter a <span className="text-blue-400 font-bold">{pendingSession.h}h {pendingSession.m}m</span> strict focus session.
+                                        {pendingSession.until !== undefined ? (
+                                            <>You are about to enter a strict focus session until <span className="text-blue-400 font-bold">{new Date(pendingSession.until).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>.</>
+                                        ) : (
+                                            <>You are about to enter a <span className="text-blue-400 font-bold">{formatDuration(pendingSession.h * 3600 + pendingSession.m * 60)}</span> strict focus session.</>
+                                        )}
                                     </p>
                                 </div>
 
@@ -425,7 +455,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     <div className="p-4 space-y-3">
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="text-slate-500">Duration</span>
-                                            <span className="text-white font-mono font-medium">{pendingSession.h > 0 ? `${pendingSession.h} h` : ''}{pendingSession.m}m 00s</span>
+                                            <span className="text-white font-mono font-medium">{formatDuration(pendingSession.until !== undefined ? (pendingSession.until - Date.now()) / 1000 : pendingSession.h * 3600 + pendingSession.m * 60)}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="text-slate-500">Apps Blocked</span>

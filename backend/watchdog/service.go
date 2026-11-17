@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"focus-lock/backend/blocking/browserpolicy"
 	"focus-lock/backend/blocking/hosts"
 	"focus-lock/backend/clock"
 	"focus-lock/backend/logging"
@@ -96,7 +97,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		blockSites(store)
 	}
 
-	defer hosts.Unblock()
+	defer unblockSites()
 
 	for {
 		select {
@@ -119,7 +120,11 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 						// Force block sites immediately (Flush DNS)
 						// Also re-checks lock status inside blockSites/enforce
 						store.Load() // Ensure store.Data is latest for below checks
-						if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
+						paused := !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil)
+						if paused {
+							// Emergency pause: leave sites unblocked (the slow
+							// loop owns the pause state) instead of re-blocking.
+						} else if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
 							blockSites(store)
 						} else if IsScheduleActive(store.Data.Schedules) {
 							blockSites(store)
@@ -195,7 +200,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 			// 3. Check Pause
 			if !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil) {
 				debugLog("Emergency Unlocked (Paused). Unblocking hosts.")
-				hosts.Unblock()
+				unblockSites()
 				continue
 			}
 
@@ -222,7 +227,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 				store.RecordFocusDay(clock.Default.Now())
 			} else {
 				// Not enforcing. Ensure Unblock.
-				hosts.Unblock()
+				unblockSites()
 
 				// Cleanup expired manual lock
 				if !store.Data.LockEndTime.IsZero() && clock.Default.Now().After(store.Data.LockEndTime) {
@@ -278,6 +283,9 @@ func blockSites(store *storage.Store) {
 	if store.Data.BlockCommonVPN {
 		sites = append(sites, protection.GetVPNDomains()...)
 	}
+	// Chrome policy layer first: it is what actually holds against Chrome's
+	// Secure DNS and cached/offline sites. Independent of the hosts result.
+	logPolicyErr("apply", browserpolicy.ApplyChrome(sites))
 	if len(sites) == 0 {
 		store.SetHostsBlockError(nil) // nothing to block; clear any stale warning
 		return
@@ -288,6 +296,32 @@ func blockSites(store *storage.Store) {
 		return
 	}
 	store.SetHostsBlockError(nil) // blocked successfully; clear any prior failure
+}
+
+// unblockSites lifts every website block layer: the hosts-file section and
+// the Chrome URLBlocklist entries Focus Lock added. Both are no-ops when there
+// is nothing to remove, so this is safe on every idle tick.
+func unblockSites() {
+	hosts.Unblock()
+	logPolicyErr("clear", browserpolicy.ClearChrome())
+}
+
+// lastPolicyErr de-duplicates policy failures: blockSites runs every few
+// seconds, and a persistent failure (e.g. a non-elevated enforcer that cannot
+// write HKLM) would otherwise flood the debug log.
+var lastPolicyErr string
+
+func logPolicyErr(action string, err error) {
+	msg := ""
+	if err != nil {
+		msg = "Chrome policy " + action + " failed: " + err.Error()
+	}
+	if msg != lastPolicyErr {
+		lastPolicyErr = msg
+		if msg != "" {
+			debugLog(msg)
+		}
+	}
 }
 
 // enforceFast uses O(1) map lookup for filenames

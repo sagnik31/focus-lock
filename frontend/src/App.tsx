@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, GetNow, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, GetNow, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings, ForgetRecentSite, SaveSiteGroups } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
+import { PendingSession, formatDuration } from "./components/duration";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
     const [newApp, setNewApp] = useState("");
-    const [pendingSession, setPendingSession] = useState<{ h: number, m: number } | null>(null);
+    const [pendingSession, setPendingSession] = useState<PendingSession | null>(null);
     const [showConfirm, setShowConfirm] = useState(false);
     const [error, setError] = useState("");
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -210,8 +211,18 @@ function App() {
     const confirmStart = async () => {
         if (!pendingSession) return;
         try {
-            const { h, m } = pendingSession;
-            const totalSeconds = (h * 3600) + (m * 60);
+            const { h, m, until } = pendingSession;
+            // "Focus until" sessions are measured against the enforcer's
+            // trusted clock at the moment of starting, so the lock ends at the
+            // chosen time even if the confirm dialog sat open for a while.
+            const totalSeconds = until !== undefined
+                ? Math.round((until - trustedNow().getTime()) / 1000)
+                : (h * 3600) + (m * 60);
+            if (totalSeconds <= 0) {
+                setShowConfirm(false);
+                setError("That end time has already passed. Pick a later date or time.");
+                return;
+            }
             await StartFocus(totalSeconds);
 
             // Success!
@@ -220,7 +231,9 @@ function App() {
 
             // Trigger Notification
             new Notification("Focus Session Started", {
-                body: `Locked for ${h > 0 ? h + "h " : ""}${m}m. Stay productive!`,
+                body: until !== undefined
+                    ? `Locked until ${new Date(until).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}. Stay productive!`
+                    : `Locked for ${formatDuration(totalSeconds)}. Stay productive!`,
                 requireInteraction: false,
             });
 
@@ -236,6 +249,16 @@ function App() {
 
     const handleRemoveSites = (urls: string[]) => {
         RemoveBlockedSites(urls).then(refresh).catch((err: any) => setError(err.toString()));
+    };
+
+    const handleForgetRecent = (url: string) => {
+        ForgetRecentSite(url).then(refresh).catch((err: any) => setError(err.toString()));
+    };
+
+    // Rejects so the group editor can show the error inline and stay open.
+    const handleSaveGroups = async (groups: storage.SiteGroup[]) => {
+        await SaveSiteGroups(groups);
+        await refresh();
     };
 
     if (isLocked && config) {
@@ -284,6 +307,8 @@ function App() {
                     handleRemoveSites={handleRemoveSites}
                     handleToggleVPN={handleToggleVPN}
                     handleImportSettings={handleImportSettings}
+                    handleForgetRecent={handleForgetRecent}
+                    handleSaveGroups={handleSaveGroups}
                     isLocked={true}
                     onBackToFocus={() => setFocusViewMode('active')}
                 />
@@ -333,6 +358,8 @@ function App() {
             handleRemoveSites={handleRemoveSites}
             handleToggleVPN={handleToggleVPN}
             handleImportSettings={handleImportSettings}
+            handleForgetRecent={handleForgetRecent}
+            handleSaveGroups={handleSaveGroups}
         />
     );
 }

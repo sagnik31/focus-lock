@@ -25,22 +25,28 @@ const (
 	OpSaveSchedules   OpType = "save_schedules"
 	OpImport          OpType = "import"
 	OpSetGhostInfo    OpType = "set_ghost_info"
+	OpForgetRecent    OpType = "forget_recent_site"
+	OpSaveSiteGroups  OpType = "save_site_groups"
 )
+
+// maxRecentSites caps the "Recently used" history kept in the config.
+const maxRecentSites = 20
 
 // Operation is a single config change. It is JSON-serialisable so the
 // non-elevated UI can hand it to the elevated Ghost through the request
 // channel. Only fields relevant to Type are populated.
 type Operation struct {
-	Type          OpType     `json:"type"`
-	Seconds       int        `json:"seconds,omitempty"`
-	Name          string     `json:"name,omitempty"`
-	URL           string     `json:"url,omitempty"`
-	Apps          []string   `json:"apps,omitempty"`
-	Sites         []string   `json:"sites,omitempty"`
-	Schedules     []Schedule `json:"schedules,omitempty"`
-	Enabled       bool       `json:"enabled,omitempty"`
-	GhostTaskName string     `json:"ghost_task_name,omitempty"`
-	GhostExePath  string     `json:"ghost_exe_path,omitempty"`
+	Type          OpType      `json:"type"`
+	Seconds       int         `json:"seconds,omitempty"`
+	Name          string      `json:"name,omitempty"`
+	URL           string      `json:"url,omitempty"`
+	Apps          []string    `json:"apps,omitempty"`
+	Sites         []string    `json:"sites,omitempty"`
+	Schedules     []Schedule  `json:"schedules,omitempty"`
+	Enabled       bool        `json:"enabled,omitempty"`
+	GhostTaskName string      `json:"ghost_task_name,omitempty"`
+	GhostExePath  string      `json:"ghost_exe_path,omitempty"`
+	SiteGroups    []SiteGroup `json:"site_groups,omitempty"`
 }
 
 // ManualLockActive reports whether a manual (timer) lock is currently running.
@@ -129,6 +135,7 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 	case OpAddSite:
 		cfg.BlockedSites = addUnique(cfg.BlockedSites, op.URL)
 		sort.Strings(cfg.BlockedSites)
+		touchRecent(cfg, op.URL)
 		return nil
 
 	case OpAddSites:
@@ -136,6 +143,7 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 			cfg.BlockedSites = addUnique(cfg.BlockedSites, s)
 		}
 		sort.Strings(cfg.BlockedSites)
+		touchRecent(cfg, op.Sites...)
 		return nil
 
 	case OpRemoveSite:
@@ -143,6 +151,10 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 			return errors.New("cannot remove sites during an active focus session")
 		}
 		cfg.BlockedSites = remove(cfg.BlockedSites, op.URL)
+		// Removing a site is exactly when it becomes useful in "Recently
+		// used" (it was blocked, now it is not), and it backfills sites that
+		// were blocked before recent history existed.
+		touchRecent(cfg, op.URL)
 		return nil
 
 	case OpRemoveSites:
@@ -152,6 +164,7 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		for _, s := range op.Sites {
 			cfg.BlockedSites = remove(cfg.BlockedSites, s)
 		}
+		touchRecent(cfg, op.Sites...)
 		return nil
 
 	case OpSetVPN:
@@ -176,6 +189,22 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		}
 		sort.Strings(cfg.BlockedSites)
 		cfg.Schedules = append(cfg.Schedules, op.Schedules...)
+		return nil
+
+	case OpForgetRecent:
+		// History only; never touches what is blocked, so always allowed.
+		cfg.RecentSites = remove(cfg.RecentSites, op.URL)
+		return nil
+
+	case OpSaveSiteGroups:
+		// Groups are presets: saving them never changes what is blocked, so
+		// this is allowed even during a session (toggling a group off goes
+		// through RemoveSites, which the lock policy guards).
+		groups, err := cleanSiteGroups(op.SiteGroups)
+		if err != nil {
+			return err
+		}
+		cfg.SiteGroups = groups
 		return nil
 
 	case OpSetGhostInfo:
@@ -268,6 +297,61 @@ func applySaveSchedules(cfg *Config, op Operation, locked bool) error {
 	}
 	cfg.Schedules = op.Schedules
 	return nil
+}
+
+// touchRecent moves the given sites to the front of the recent-sites history
+// (most recent first), de-duplicated and capped at maxRecentSites.
+func touchRecent(cfg *Config, sites ...string) {
+	var front []string
+	for i := len(sites) - 1; i >= 0; i-- {
+		s := strings.TrimSpace(sites[i])
+		if s == "" {
+			continue
+		}
+		front = append([]string{s}, remove(front, s)...)
+	}
+	if len(front) == 0 {
+		return
+	}
+	rest := cfg.RecentSites
+	for _, s := range front {
+		rest = remove(rest, s)
+	}
+	cfg.RecentSites = append(front, rest...)
+	if len(cfg.RecentSites) > maxRecentSites {
+		cfg.RecentSites = cfg.RecentSites[:maxRecentSites]
+	}
+}
+
+// cleanSiteGroups validates user-defined groups: every group needs an ID and
+// a non-empty name, names are unique (case-insensitive), and each group's
+// sites are trimmed and de-duplicated.
+func cleanSiteGroups(in []SiteGroup) ([]SiteGroup, error) {
+	out := make([]SiteGroup, 0, len(in))
+	names := make(map[string]bool)
+	for _, g := range in {
+		name := strings.TrimSpace(g.Name)
+		if g.ID == "" {
+			return nil, errors.New("group is missing an id")
+		}
+		if name == "" {
+			return nil, errors.New("group name cannot be empty")
+		}
+		key := strings.ToLower(name)
+		if names[key] {
+			return nil, errors.New("a group named \"" + name + "\" already exists")
+		}
+		names[key] = true
+		sites := []string{}
+		for _, s := range g.Sites {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				sites = addUnique(sites, s)
+			}
+		}
+		out = append(out, SiteGroup{ID: g.ID, Name: name, Sites: sites})
+	}
+	return out, nil
 }
 
 // --- small slice helpers ---

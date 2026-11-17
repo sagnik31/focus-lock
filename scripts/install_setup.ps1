@@ -130,6 +130,38 @@ function Remove-HostsBlock([string]$Path = (Join-Path $env:SystemRoot 'System32\
     Write-Host "[setup] Removed the Focus Lock block from $Path."
 }
 
+# Remove the Chrome URLBlocklist entries Focus Lock added (recorded in
+# HKLM\SOFTWARE\FocusLock\ChromeBlocklistOwned; must match
+# backend/blocking/browserpolicy). Entries the user had are kept; the policy
+# key is deleted when nothing is left, so Chrome stops showing "Managed by
+# your organization". Must run before $base is deleted.
+function Remove-ChromePolicy {
+    $owned = @((Get-ItemProperty -Path $base -Name 'ChromeBlocklistOwned' -ErrorAction SilentlyContinue).ChromeBlocklistOwned)
+    if ($owned.Count -eq 0) { return }
+    $chromeKey = 'HKLM:\SOFTWARE\Policies\Google\Chrome'
+    $listKey = "$chromeKey\URLBlocklist"
+    if (Test-Path $listKey) {
+        $props = Get-ItemProperty -Path $listKey
+        $kept = @($props.PSObject.Properties |
+            Where-Object { $_.Name -match '^\d+$' } |
+            Sort-Object { [int]$_.Name } |
+            ForEach-Object { $_.Value } |
+            Where-Object { $owned -notcontains $_ })
+        Remove-Item -Path $listKey -Recurse -Force
+        if ($kept.Count -gt 0) {
+            $null = New-Item -Path $listKey -Force
+            for ($i = 0; $i -lt $kept.Count; $i++) {
+                $null = New-ItemProperty -Path $listKey -Name ([string]($i + 1)) -Value $kept[$i] -PropertyType String
+            }
+        } elseif ((Test-Path $chromeKey) -and -not (Get-ChildItem $chromeKey) -and
+                  -not ((Get-Item $chromeKey).Property)) {
+            Remove-Item -Path $chromeKey -Force
+        }
+    }
+    Remove-ItemProperty -Path $base -Name 'ChromeBlocklistOwned' -ErrorAction SilentlyContinue
+    Write-Host "[setup] Removed Focus Lock's Chrome URLBlocklist entries."
+}
+
 if (-not $LogPath) {
     $LogPath = Join-Path $env:TEMP $(if ($Uninstall) { 'FocusLock-uninstall.log' } else { 'FocusLock-setup.log' })
 }
@@ -148,6 +180,7 @@ try {
         }
         try { Stop-FocusLock } catch { Write-Warning "Could not stop Focus Lock: $($_.Exception.Message)" }
         try { Remove-HostsBlock } catch { Write-Warning "Could not clean the hosts file: $($_.Exception.Message)" }
+        try { Remove-ChromePolicy } catch { Write-Warning "Could not clean the Chrome policy: $($_.Exception.Message)" }
         try { Remove-Item -Path $base -Recurse -Force -ErrorAction Stop } catch {}
         try { Remove-Item -Path $userBase -Recurse -Force -ErrorAction Stop } catch {}
         $exclusions = @($flDir)
