@@ -18,6 +18,7 @@
 package clock
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -85,6 +86,23 @@ func (c *Clock) Sync() error {
 	c.baseMono = mono
 	c.anchored = true
 	return nil
+}
+
+// ErrSyncTimeout is returned by SyncWithin when NTP did not answer in time.
+var ErrSyncTimeout = errors.New("clock: NTP sync timed out")
+
+// SyncWithin is Sync with a deadline: it waits at most d for NTP (the attempt
+// keeps running in the background and still anchors the clock if it finishes
+// later). Used by one-shot checks that must not hang offline.
+func (c *Clock) SyncWithin(d time.Duration) error {
+	done := make(chan error, 1)
+	go func() { done <- c.Sync() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(d):
+		return ErrSyncTimeout
+	}
 }
 
 // Start anchors the clock immediately and then re-syncs every interval for the

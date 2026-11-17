@@ -84,3 +84,31 @@ func TestNowAdvancesMonotonically(t *testing.T) {
 		t.Errorf("elapsed %v does not match the ~20ms slept", elapsed)
 	}
 }
+
+func TestSyncWithin(t *testing.T) {
+	fake := time.Date(2036, 1, 2, 3, 4, 5, 0, time.UTC)
+	release := make(chan struct{})
+	defer withFetch(func() (time.Time, error) {
+		<-release
+		return fake, nil
+	})()
+
+	c := New()
+	if err := c.SyncWithin(20 * time.Millisecond); !errors.Is(err, ErrSyncTimeout) {
+		t.Fatalf("slow NTP: want ErrSyncTimeout, got %v", err)
+	}
+	if c.Anchored() {
+		t.Fatal("clock anchored before NTP answered")
+	}
+	close(release) // the background attempt finishes and anchors late
+	deadline := time.Now().Add(2 * time.Second)
+	for !c.Anchored() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !c.Anchored() {
+		t.Fatal("late NTP answer did not anchor the clock")
+	}
+	if err := c.SyncWithin(time.Second); err != nil {
+		t.Fatalf("fast NTP: %v", err)
+	}
+}

@@ -25,15 +25,7 @@ func sessionActiveExitCode() int {
 	}
 	_ = store.Load() // on error Data still holds what could be recovered
 
-	synced := make(chan struct{})
-	go func() {
-		_ = clock.Default.Sync()
-		close(synced)
-	}()
-	select {
-	case <-synced:
-	case <-time.After(3 * time.Second):
-	}
+	_ = clock.Default.SyncWithin(3 * time.Second)
 
 	if storage.EnforcementActive(&store.Data, clock.Default.Now()) {
 		return exitSessionActive
