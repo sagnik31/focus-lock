@@ -4,6 +4,7 @@ import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
 import { PendingSession, formatDuration } from "./components/duration";
+import { useUpdateState } from "./components/updates";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
@@ -20,6 +21,7 @@ function App() {
     // timer and lock state aligned with what the Ghost actually enforces, even if
     // the system clock is changed.
     const [nowOffset, setNowOffset] = useState(0);
+    const [updateState, applyUpdateState] = useUpdateState();
 
     const refresh = async () => {
         try {
@@ -311,6 +313,8 @@ function App() {
                     handleSaveGroups={handleSaveGroups}
                     isLocked={true}
                     onBackToFocus={() => setFocusViewMode('active')}
+                    updateState={updateState}
+                    onUpdateState={applyUpdateState}
                 />
             );
         }
@@ -328,6 +332,7 @@ function App() {
                 onQuit={handleQuit}
                 enforcementError={config.last_enforcement_error}
                 nowOffsetMs={nowOffset}
+                updateDownloaded={updateState?.available && updateState.downloaded ? updateState.latest : undefined}
             />
         );
     }
@@ -360,6 +365,8 @@ function App() {
             handleImportSettings={handleImportSettings}
             handleForgetRecent={handleForgetRecent}
             handleSaveGroups={handleSaveGroups}
+            updateState={updateState}
+            onUpdateState={applyUpdateState}
         />
     );
 }

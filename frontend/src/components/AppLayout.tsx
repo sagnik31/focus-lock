@@ -9,11 +9,13 @@ import { WebsiteSelector } from './WebsiteSelector';
 import { ScheduleList } from './ScheduleList';
 import { ImportModal } from './ImportModal';
 import { InsightsModal } from './Insights';
+import { UpdatePanel } from './UpdatePanel';
+import { UpdateState } from './updates';
 import { useState } from "react";
 import logo from '../assets/logo.png';
 import {
     Download, Check, AlertTriangle, Lock, ArrowLeft, Search, Trash2,
-    Ban, ChevronDown, Plus, BarChart3,
+    Ban, ChevronDown, Plus, BarChart3, RefreshCw,
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -61,6 +63,10 @@ interface AppLayoutProps {
     // Session-aware mode
     isLocked?: boolean;
     onBackToFocus?: () => void;
+
+    // In-app updates (state owned by App via useUpdateState)
+    updateState: UpdateState | null;
+    onUpdateState: (raw: string) => void;
 }
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
@@ -91,7 +97,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     handleForgetRecent,
     handleSaveGroups,
     isLocked,
-    onBackToFocus
+    onBackToFocus,
+    updateState,
+    onUpdateState,
 }) => {
     const [inputMode, setInputMode] = useState<'slider' | 'keypad' | 'until'>('slider');
     const [activeTab, setActiveTab] = useState<'apps' | 'websites'>('apps');
@@ -100,6 +108,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     const [importSuccess, setImportSuccess] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
     const [showInsights, setShowInsights] = useState(false);
+    const [showUpdates, setShowUpdates] = useState(false);
 
     if (!config) return (
         <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400">
@@ -122,8 +131,27 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                         <h1 className="text-xl font-bold tracking-tight text-slate-200">
                             Focus Lock
                         </h1>
+                        {updateState?.current && (
+                            <span className="text-[11px] font-mono text-slate-500" title="Installed version">
+                                {updateState.dev ? 'dev build' : `v${updateState.current}`}
+                            </span>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowUpdates(true)}
+                            aria-label={updateState?.available ? `Update available: version ${updateState.latest}` : "Check for updates"}
+                            className={`relative px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer transition-all flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50 backdrop-blur-sm ${updateState?.available
+                                ? 'bg-blue-600/20 border-blue-500/50 text-blue-300 hover:bg-blue-600/30'
+                                : 'bg-slate-800/50 border-slate-700/50 text-slate-300 hover:bg-blue-600/20 hover:border-blue-500/50 hover:text-blue-400'
+                                }`}
+                        >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                            {updateState?.available ? 'Update available' : 'Updates'}
+                            {updateState?.available && (
+                                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-blue-400 ring-2 ring-slate-950" />
+                            )}
+                        </button>
                         <button
                             onClick={() => setShowInsights(true)}
                             aria-label="View insights"
@@ -430,6 +458,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {/* Insights Modal */}
                 {showInsights && (
                     <InsightsModal onClose={() => setShowInsights(false)} appMap={appMap} />
+                )}
+
+                {/* Updates Modal */}
+                {showUpdates && (
+                    <UpdatePanel
+                        state={updateState}
+                        onState={onUpdateState}
+                        isLocked={!!isLocked}
+                        onClose={() => setShowUpdates(false)}
+                    />
                 )}
 
                 {/* Confirmation Modal */}

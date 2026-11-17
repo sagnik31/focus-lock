@@ -17,9 +17,11 @@ interface FocusActiveProps {
     // Offset (ms) from this browser's clock to the enforcer's trusted clock, so
     // the countdown matches what the Ghost enforces even if the system clock moves.
     nowOffsetMs?: number;
+    // Version of an update that is downloaded and waiting for the session to end.
+    updateDownloaded?: string;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, nowOffsetMs = 0 }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, nowOffsetMs = 0, updateDownloaded }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
 
@@ -80,6 +82,12 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                             <p className="text-amber-200/80">{enforcementError}</p>
                         </div>
                     </div>
+                )}
+
+                {updateDownloaded && (
+                    <p className="text-xs text-slate-400 text-center">
+                        Update {updateDownloaded} downloaded — it installs after this session.
+                    </p>
                 )}
 
                 {/* Header & Timer */}
