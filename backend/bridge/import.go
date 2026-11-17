@@ -12,8 +12,17 @@ import (
 
 // ImportData represents the JSON structure for importing settings
 type ImportData struct {
-	Blocked   BlockedItems     `json:"blocked"`
-	Schedules []ImportSchedule `json:"schedules"`
+	Blocked     BlockedItems     `json:"blocked"`
+	Schedules   []ImportSchedule `json:"schedules"`
+	Groups      []ImportGroup    `json:"groups,omitempty"`      // custom website sections
+	RecentSites []string         `json:"recentSites,omitempty"` // "Recently used" websites
+}
+
+// ImportGroup is a custom website section in import format. A group whose
+// name matches an existing one is merged into it.
+type ImportGroup struct {
+	Name  string   `json:"name"`
+	Sites []string `json:"sites"`
 }
 
 // BlockedItems represents the blocked apps and sites in import format
@@ -126,12 +135,28 @@ func (a *App) ImportSettings(jsonContent string) error {
 		})
 	}
 
+	// Convert groups. Unnamed groups are skipped; the policy merges groups
+	// whose name already exists and validates the rest.
+	newGroups := make([]storage.SiteGroup, 0, len(importData.Groups))
+	for _, g := range importData.Groups {
+		if strings.TrimSpace(g.Name) == "" {
+			continue
+		}
+		newGroups = append(newGroups, storage.SiteGroup{
+			ID:    uuid.New().String(),
+			Name:  g.Name,
+			Sites: g.Sites,
+		})
+	}
+
 	// Import is append-only, so the policy always allows it, even mid-lock.
 	return a.applyOp(storage.Operation{
-		Type:      storage.OpImport,
-		Apps:      newApps,
-		Sites:     newSites,
-		Schedules: newSchedules,
+		Type:        storage.OpImport,
+		Apps:        newApps,
+		Sites:       newSites,
+		Schedules:   newSchedules,
+		SiteGroups:  newGroups,
+		RecentSites: importData.RecentSites,
 	})
 }
 
@@ -144,7 +169,11 @@ func (a *App) ExportSettings() (string, error) {
 			Apps:  a.Store.Data.BlockedApps,
 			Sites: a.Store.Data.BlockedSites,
 		},
-		Schedules: make([]ImportSchedule, 0, len(a.Store.Data.Schedules)),
+		Schedules:   make([]ImportSchedule, 0, len(a.Store.Data.Schedules)),
+		RecentSites: a.Store.Data.RecentSites,
+	}
+	for _, g := range a.Store.Data.SiteGroups {
+		exportData.Groups = append(exportData.Groups, ImportGroup{Name: g.Name, Sites: g.Sites})
 	}
 
 	for _, sched := range a.Store.Data.Schedules {

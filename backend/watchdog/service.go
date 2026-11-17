@@ -87,7 +87,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 
 	// Process any request the UI queued before we started (e.g. the very first
 	// StartFocus, which the non-elevated UI cannot write itself).
-	processRequests(store)
+	_ = processRequests(store)
 
 	// Initial check to block immediately if needed
 	store.Load()
@@ -106,13 +106,22 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 
 			// 0a. Apply any UI request (strong mode: the UI cannot sign the
 			// config, so it hands operations to us to validate and commit).
-			processRequests(store)
+			applied := processRequests(store)
 
 			// 0. Check for Config Changes (Immediate Reaction)
 			if info, err := os.Stat(configPath); err == nil {
 				// Use !Equal to catch any modification (sometimes time resolution can be tricky)
-				if !info.ModTime().Equal(lastModTime) {
+				changed := !info.ModTime().Equal(lastModTime)
+				if changed {
 					lastModTime = info.ModTime()
+				}
+				// Skip our own routine writes (remaining time, stats, quota):
+				// the slow loop rewrites the config every tick, and reacting
+				// to that reloaded everything every 5s and flooded the log.
+				// A UI request we just applied is also our write, but it must
+				// take effect now, so it always reloads.
+				ownWrite := info.ModTime().Equal(store.OwnWriteTime())
+				if changed && (applied || !ownWrite) {
 					debugLog("Config file changed. Reloading cache...")
 					newApps, newLookup, err := refreshCache()
 					if err == nil {
@@ -258,14 +267,15 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 // processRequests drains one queued UI operation (if any), validates it with
 // the shared policy, and writes the verdict back for the UI. Only a signer
 // (the elevated Ghost in strong mode) acts; a non-signer never reaches here.
-func processRequests(store *storage.Store) {
+// It reports whether an operation was applied (and the config changed).
+func processRequests(store *storage.Store) bool {
 	if !store.CanSign() {
-		return
+		return false
 	}
 	dir := store.RequestDir()
 	req, ok := storage.TakePendingRequest(dir)
 	if !ok {
-		return
+		return false
 	}
 	err := store.ApplyRequest(req.Op, clock.Default.Now())
 	res := storage.Result{ID: req.ID, OK: err == nil}
@@ -276,6 +286,7 @@ func processRequests(store *storage.Store) {
 		debugLog("Request applied: " + string(req.Op.Type))
 	}
 	storage.WriteResult(dir, res)
+	return err == nil
 }
 
 func blockSites(store *storage.Store) {

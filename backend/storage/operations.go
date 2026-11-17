@@ -47,6 +47,7 @@ type Operation struct {
 	GhostTaskName string      `json:"ghost_task_name,omitempty"`
 	GhostExePath  string      `json:"ghost_exe_path,omitempty"`
 	SiteGroups    []SiteGroup `json:"site_groups,omitempty"`
+	RecentSites   []string    `json:"recent_sites,omitempty"`
 }
 
 // ManualLockActive reports whether a manual (timer) lock is currently running.
@@ -189,6 +190,10 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		}
 		sort.Strings(cfg.BlockedSites)
 		cfg.Schedules = append(cfg.Schedules, op.Schedules...)
+		if err := mergeSiteGroups(cfg, op.SiteGroups); err != nil {
+			return err
+		}
+		mergeRecent(cfg, op.RecentSites)
 		return nil
 
 	case OpForgetRecent:
@@ -320,6 +325,53 @@ func touchRecent(cfg *Config, sites ...string) {
 	cfg.RecentSites = append(front, rest...)
 	if len(cfg.RecentSites) > maxRecentSites {
 		cfg.RecentSites = cfg.RecentSites[:maxRecentSites]
+	}
+}
+
+// mergeSiteGroups folds imported groups into the existing ones. A group whose
+// name matches an existing group (case-insensitive) adds its sites to that
+// group; any other group is appended. Groups are presets, so this never
+// changes what is blocked.
+func mergeSiteGroups(cfg *Config, imported []SiteGroup) error {
+	if len(imported) == 0 {
+		return nil
+	}
+	merged := append([]SiteGroup{}, cfg.SiteGroups...)
+	for _, g := range imported {
+		name := strings.TrimSpace(g.Name)
+		found := false
+		for i := range merged {
+			if strings.EqualFold(merged[i].Name, name) {
+				sites := append([]string{}, merged[i].Sites...)
+				for _, s := range g.Sites {
+					sites = addUnique(sites, strings.TrimSpace(s))
+				}
+				merged[i].Sites = sites
+				found = true
+				break
+			}
+		}
+		if !found {
+			merged = append(merged, g)
+		}
+	}
+	groups, err := cleanSiteGroups(merged)
+	if err != nil {
+		return err
+	}
+	cfg.SiteGroups = groups
+	return nil
+}
+
+// mergeRecent appends imported recent sites after the existing history (the
+// user's own recent activity stays first), de-duplicated and capped.
+func mergeRecent(cfg *Config, imported []string) {
+	for _, s := range imported {
+		s = strings.TrimSpace(s)
+		if s == "" || len(cfg.RecentSites) >= maxRecentSites {
+			continue
+		}
+		cfg.RecentSites = addUnique(cfg.RecentSites, s)
 	}
 }
 

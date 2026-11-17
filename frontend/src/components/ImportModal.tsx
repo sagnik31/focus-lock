@@ -63,7 +63,7 @@ export function ImportModal({ isOpen, onClose, onImport, onSuccess }: ImportModa
                     </div>
                     <h3 className="text-lg font-bold text-white">Import Settings</h3>
                     <p className="text-slate-400 text-sm">
-                        Import blocked apps, websites, and schedules from a JSON file or paste directly.
+                        Import blocked apps, websites, schedules, website groups and recently used sites from a JSON file or paste directly.
                     </p>
                 </div>
 
@@ -97,7 +97,7 @@ export function ImportModal({ isOpen, onClose, onImport, onSuccess }: ImportModa
                     <textarea
                         value={pasteText}
                         onChange={(e) => setPasteText(e.target.value)}
-                        placeholder='{"blocked": {"apps": [...], "sites": [...]}, "schedules": [...]}'
+                        placeholder='{"blocked": {"apps": [...], "sites": [...]}, "schedules": [...], "groups": [{"name": "...", "sites": [...]}], "recentSites": [...]}'
                         disabled={isImporting}
                         className="w-full h-32 bg-slate-800/50 border border-slate-700/50 focus:border-blue-500/50 rounded-lg px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:ring-2 focus:ring-blue-500/20 outline-none resize-none font-mono"
                     />

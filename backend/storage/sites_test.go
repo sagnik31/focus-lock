@@ -71,3 +71,38 @@ func TestSiteGroupsAllowedDuringLockAndValidated(t *testing.T) {
 		}
 	}
 }
+
+func TestImportMergesGroupsAndRecent(t *testing.T) {
+	now := time.Now()
+	cfg := lockedConfig(now) // import must work mid-lock (append-only)
+	cfg.SiteGroups = []SiteGroup{{ID: "g1", Name: "News", Sites: []string{"bbc.com"}}}
+	cfg.RecentSites = []string{"youtube.com"}
+
+	op := Operation{
+		Type: OpImport,
+		SiteGroups: []SiteGroup{
+			{ID: "x1", Name: "news", Sites: []string{"cnn.com", "bbc.com"}}, // merges by name
+			{ID: "x2", Name: "Games", Sites: []string{"roblox.com"}},        // new group
+		},
+		RecentSites: []string{"monkeytype.com", "youtube.com"},
+	}
+	if err := ApplyOperation(cfg, op, now); err != nil {
+		t.Fatalf("import refused: %v", err)
+	}
+
+	want := []SiteGroup{
+		{ID: "g1", Name: "News", Sites: []string{"bbc.com", "cnn.com"}},
+		{ID: "x2", Name: "Games", Sites: []string{"roblox.com"}},
+	}
+	if !reflect.DeepEqual(cfg.SiteGroups, want) {
+		t.Fatalf("groups = %+v, want %+v", cfg.SiteGroups, want)
+	}
+	// The user's own history stays first; imports are appended, de-duplicated.
+	if want := []string{"youtube.com", "monkeytype.com"}; !reflect.DeepEqual(cfg.RecentSites, want) {
+		t.Fatalf("recent = %v, want %v", cfg.RecentSites, want)
+	}
+	// Groups and history never change what is blocked.
+	if !reflect.DeepEqual(cfg.BlockedSites, []string{"reddit.com"}) {
+		t.Fatalf("blocked sites changed: %v", cfg.BlockedSites)
+	}
+}

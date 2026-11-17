@@ -96,6 +96,20 @@ type Store struct {
 	// must route every change through the request channel.
 	strong  bool
 	canSign bool
+
+	// ownWrite is config.json's modification time right after this Store's
+	// last successful save. The enforcer compares it with the file's current
+	// mtime to tell its own routine writes (remaining time, stats) from
+	// changes made by someone else, so it does not reload after every save.
+	ownWrite time.Time
+}
+
+// OwnWriteTime returns config.json's modification time as of this Store's
+// most recent save (zero if it has not saved).
+func (s *Store) OwnWriteTime() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ownWrite
 }
 
 // CanSign reports whether this process may write the config directly. When
@@ -302,6 +316,9 @@ func (s *Store) saveInternal() error {
 	}
 	if err := atomicWrite(s.filePath+".sig", []byte(sig)); err != nil {
 		return err
+	}
+	if info, err := os.Stat(s.filePath); err == nil {
+		s.ownWrite = info.ModTime()
 	}
 
 	// 2. Full redundant backup (config + its signature). Written after the
