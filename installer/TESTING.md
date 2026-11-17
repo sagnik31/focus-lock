@@ -9,14 +9,15 @@ signed-in user). Use an admin PowerShell for the checks.
 - The existing `FocusLock Enforcer` task currently runs the **dev build** in
   `%APPDATA%\FocusLock\focus-lock.exe` (from `deploy.ps1` / `setup_persistence.ps1`).
   The installer re-points it at Program Files and stops the dev enforcer.
-- Expect two "Focus Lock" desktop shortcuts afterwards: your dev one (user
-  desktop) and the installer's (public desktop). The pre-push hook keeps
-  redeploying the dev exe; that's fine, the task runs the installed one.
+- Expect two "Focus Lock" desktop shortcuts afterwards if you ever ran
+  `deploy.ps1`: your dev one (user desktop) and the installer's (public desktop).
+  The pre-push hook no longer redeploys the dev exe; delete the dev shortcut and
+  `%APPDATA%\FocusLock\focus-lock.exe` if you only want the installed copy.
 - Optional, to test the hosts cleanup later: start a short manual lock before uninstalling (step 3).
 
 ## 1. Install
 
-- [ ] Run `installer\Output\FocusLock-Setup-1.0.0.exe`, accept UAC, finish with "Launch Focus Lock" ticked.
+- [ ] Run `installer\Output\FocusLock-Setup-<version>.exe` (or a release's `FocusLock-Setup.exe`), accept UAC, finish with "Launch Focus Lock" ticked.
 - [ ] No "enforcement setup failed" error dialog appeared. (If it did: read `%TEMP%\FocusLock-setup.log`.)
 - [ ] App launches non-elevated (Task Manager → Details → "Elevated" column = No for the UI `focus-lock.exe`).
 
@@ -60,6 +61,83 @@ Select-String 'FOCUS LOCK' C:\Windows\System32\drivers\etc\hosts         # nothi
 ```
 
 Note: if you still use the dev `deploy.ps1` flow, uninstall deletes the dev exe in
-`%APPDATA%\FocusLock` too; the next push re-deploys it.
+`%APPDATA%\FocusLock` too; run `deploy.ps1` by hand to put it back.
 
 If anything is off, `%TEMP%\FocusLock-setup.log` / `%TEMP%\FocusLock-uninstall.log` have the transcript.
+
+## 5. Releases and in-app updates
+
+Needs the release workflow on `main` on GitHub. Steps 5.2 onward start from an
+installed **release** build (a local `build_installer.ps1` build without
+`-Version` reports `dev` and never offers updates). For 5.3 you need two releases:
+run the workflow once, install that, then run it again (a manual run always
+releases; a second run on the same UTC day gets `.1`).
+
+### 5.1 Release pipeline
+
+- [ ] GitHub → Actions → **release** → **Run workflow** on `main` (or
+      `scripts\release.ps1 -Watch`). The run is green.
+- [ ] The new release `vYYYY.M.D.N` has 3 assets: `FocusLock-Setup-<ver>.exe`,
+      `FocusLock-Setup.exe`, `SHA256SUMS.txt`.
+- [ ] `https://github.com/sagnik31/focus-lock/releases/latest/download/FocusLock-Setup.exe`
+      downloads, and its hash matches `SHA256SUMS.txt`:
+      `(Get-FileHash .\FocusLock-Setup.exe).Hash.ToLower()`.
+
+### 5.2 Fresh install from a release
+
+- [ ] Install from the downloaded `FocusLock-Setup.exe` (SmartScreen warns once: More info → Run anyway).
+- [ ] The header shows `v<ver>` next to "Focus Lock"; **Updates** says "You're on the latest version" after **Check for updates**.
+- [ ] Settings → Apps lists Focus Lock with version `<ver>`.
+- [ ] `& 'C:\Program Files\Focus Lock\focus-lock.exe' --session-active; $LASTEXITCODE` → `0` with no session, and no window opens.
+
+### 5.3 Update to a newer release
+
+- [ ] Publish a newer release (run the workflow again). Restart the app or click **Check for updates**:
+      the header button turns into **Update available** with a dot, and the panel shows the new version and notes.
+- [ ] **Download** shows progress, then "Downloaded and verified". The file is in `%APPDATA%\FocusLock\update\`.
+- [ ] **Install and restart** → exactly one UAC prompt → the app closes, then reopens by itself on the new version.
+- [ ] Afterwards: blocked apps/sites, schedules, groups, Insights history intact; strong mode still on (§2 checks);
+      `FocusLock Enforcer` task running from Program Files.
+- [ ] Older downloaded setups are gone from `%APPDATA%\FocusLock\update\`.
+
+### 5.4 No install during a session
+
+With an update available (downloaded or not):
+
+- [ ] Start a manual lock. Open **Settings** from the lock screen → **Updates**: **Check for updates** and
+      **Download** still work; **Install and restart** is disabled with "Available when your session ends".
+- [ ] The lock screen shows "Update <ver> downloaded — it installs after this session".
+- [ ] Backend refusal, bypassing the greyed-out button (also unit-tested in `backend/bridge/update_test.go`):
+      quit the installed UI, build an old-versioned copy with devtools,
+      `wails build -devtools -ldflags "-X focus-lock/backend/version.Version=2026.1.1.0"`, and run
+      `build\bin\focus-lock.exe` directly (same config). Check → Download, start a lock, then right-click →
+      Inspect → Console: `await window.go.bridge.App.InstallUpdate()` → the result's `error` says updates
+      can't be installed during a focus session; no UAC prompt, nothing runs.
+- [ ] Run the downloaded `FocusLock-Setup-<ver>.exe` (or any newer Setup) by hand → Setup refuses with
+      "A Focus Lock session is active…" before anything is stopped; the enforcer keeps running.
+- [ ] `focus-lock.exe --session-active; $LASTEXITCODE` → `3`.
+- [ ] After the lock ends, **Install and restart** is enabled and works.
+
+### 5.5 Schedule window
+
+- [ ] Create a schedule window covering now, no manual lock. Repeat 5.4: same results (install refused in the
+      app and in Setup, `--session-active` → `3`). Disable/finish the window → install works.
+
+### 5.6 Failure cases (each shows a clear message and runs nothing)
+
+- [ ] **Offline** (disable the network adapter) → Check for updates: "could not reach GitHub (are you offline?)…".
+- [ ] **Declined UAC** → click **No** at the prompt: the panel goes back to "Downloaded and verified" with
+      "the administrator prompt was declined…"; the app keeps running; Install can be retried.
+- [ ] **Tampered download** → after Download, overwrite the file in `%APPDATA%\FocusLock\update\` (e.g.
+      `Set-Content` some text into it), then **Install and restart**: "The downloaded installer was changed or
+      damaged…", the file is deleted, no UAC prompt; **Download** is offered again.
+
+### 5.7 Empty week
+
+- [ ] A scheduled (Sunday) run with no commits since the last release tag succeeds and logs
+      "No commits since … skipping", and no new release appears. (Or wait for a quiet week and check the Actions log.)
+- [ ] If the repo had no activity for 60 days, GitHub disables the schedule: re-enable it in Actions.
+
+Known gaps (accepted): uninstalling mid-session isn't blocked; the first update from a pre-calendar
+`1.0.0` install isn't gated by the installer (the app-side check still applies); installers older than this
+feature don't refuse mid-session either.

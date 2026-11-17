@@ -104,6 +104,16 @@ For local development with hot-reloading of the frontend, run:
 wails dev
 ```
 
+### Download
+
+Get the latest installer from
+**[Releases → latest](https://github.com/sagnik31/focus-lock/releases/latest)**: the
+`FocusLock-Setup.exe` asset, also at
+`https://github.com/sagnik31/focus-lock/releases/latest/download/FocusLock-Setup.exe`. Each
+release also publishes `SHA256SUMS.txt`. The installer isn't code-signed, so Windows
+SmartScreen warns the first time you run a copy downloaded in a browser (**More info → Run
+anyway**). In-app updates don't trigger that warning.
+
 ### Install (recommended): the bundled installer
 
 Editing the `hosts` file and keeping enforcement running across reboots require a one-time
@@ -118,7 +128,9 @@ Build the installer (needs the [Inno Setup 6](https://jrsoftware.org/isdl.php) c
 powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
-This produces `installer\Output\FocusLock-Setup-<version>.exe`. Run it, approve the single
+This produces `installer\Output\FocusLock-Setup-<version>.exe`, plus `FocusLock-Setup.exe` and
+`SHA256SUMS.txt`. A local build is installer version `0.0.0.0` and the app reports `dev`; pass
+`-Version YYYY.M.D.N` to stamp a release version. Run it, approve the single
 UAC prompt, and the one-time enforcement setup runs automatically and starts the enforcer
 (no reboot needed). If that setup step fails, Setup says so and the app runs in reduced mode;
 the details are in `%TEMP%\FocusLock-setup.log`.
@@ -132,10 +144,25 @@ A manual verification checklist for the installer is in
 
 ### Updating
 
-There is no automatic update yet (planned). To update, build or download a newer
-`FocusLock-Setup-<version>.exe` and run it over the existing install: it stops the enforcer,
-replaces the exe, re-registers the task and starts it again, keeping your settings, history
-and tamper-protection secret.
+Install once; after that the app updates itself.
+
+- **Weekly releases.** Every Sunday a GitHub Actions workflow takes the latest `main`, runs
+  the tests and typecheck, and publishes a release. Weeks with no changes are skipped.
+  Versions are calendar versions `YYYY.M.D.N` (tag `vYYYY.M.D.N`).
+- **In the app.** Click **Updates** in the header. It reads **Update available** when there is
+  one, and the app also checks quietly on start, at most once a day. **Download** fetches the
+  new installer and verifies it against the release's SHA-256 checksum. **Install and
+  restart** runs it with one UAC prompt, and Focus Lock reopens on the new version with your
+  settings, history, schedules and tamper-protection secret intact.
+- **Not during a session.** You can check and download at any time, but installing is refused
+  while a timer lock or a schedule window is active. Both the app and the installer enforce
+  this. Installing becomes available when the session ends.
+- **By hand.** Running a newer `FocusLock-Setup-<version>.exe` over the existing install does
+  the same thing: it stops the enforcer, replaces the exe, re-registers the task and starts it
+  again. Running an older one rolls back.
+
+Local builds (`wails build`, `wails dev`, `scripts\deploy.ps1`) report version `dev` and never
+offer updates.
 
 > Strong (tamper-resistant) mode assumes the signed-in user is a local administrator. On a
 > standard-user account the app still installs and runs, but stays in reduced mode (a
@@ -145,8 +172,8 @@ and tamper-protection secret.
 
 Without the installer, run the consolidated setup script once from the `scripts` folder — it
 self-elevates (one UAC prompt) and performs the same steps for whichever exe you point it at
-(the task runs that exe with `--enforce`). Run `scripts\deploy.ps1` first so the exe exists
-in `%APPDATA%\FocusLock`, then:
+(the task runs that exe with `--enforce`). For a dev build, run `scripts\deploy.ps1` by hand
+first so the exe exists in `%APPDATA%\FocusLock` (don't mix this with an installed copy), then:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_setup.ps1 -ExePath "$env:APPDATA\FocusLock\focus-lock.exe"
@@ -171,7 +198,8 @@ battery-safe and has no run-time limit, so Windows does not silently interrupt i
 ```
 backend/        Go: enforcement, scheduling, storage, system info, Wails bridge
 frontend/       React + TypeScript UI (Vite + Tailwind)
-scripts/        PowerShell helpers for setup, deployment, and git hooks
+scripts/        PowerShell helpers for setup, builds, releases, and git hooks
+.github/        Weekly release workflow
 installer/      Inno Setup script for the bundled installer, plus its test checklist
 main.go         Application entry point
 wails.json      Wails project configuration
