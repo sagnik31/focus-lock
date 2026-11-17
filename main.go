@@ -25,6 +25,13 @@ func main() {
 	// within a minute (with the lock state intact), which is what makes killing
 	// it pointless without the app behaving like self-defending malware.
 
+	// 0. "--session-active": used by the installer to refuse an install/update
+	// mid-session. Exits 3 if a manual lock or schedule window is active, 0 if
+	// not. Never starts the UI or takes either mutex.
+	if len(os.Args) > 1 && os.Args[1] == "--session-active" {
+		os.Exit(sessionActiveExitCode())
+	}
+
 	// 1. Check for "--enforce" flag (Ghost Mode)
 	// We check this FIRST because the Ghost process runs in the background and
 	// should not be blocked by the single-instance mutex of the UI.

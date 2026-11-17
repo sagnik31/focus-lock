@@ -17,7 +17,12 @@
 ; credentials) the app installs and runs but stays in reduced mode.
 
 #define AppName "Focus Lock"
-#define AppVersion "1.0.0"
+; AppVersion is the calendar version YYYY.M.D.N. Release builds pass it with
+; ISCC /DAppVersion=<ver> (scripts\build_installer.ps1 -Version); local builds
+; keep 0.0.0.0. It must stay a numeric 4-part version (VersionInfoVersion).
+#ifndef AppVersion
+  #define AppVersion "0.0.0.0"
+#endif
 #define AppPublisher "Sagnik Chakraborty"
 #define AppExe "focus-lock.exe"
 #define EnforcerTask "FocusLock Enforcer"
@@ -26,6 +31,7 @@
 AppId={{B6E3F7A2-9C4D-4E1B-8A3F-0F2C7D5E9A10}
 AppName={#AppName}
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
@@ -65,6 +71,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; Offer to launch the app after install - non-elevated, as the signed-in user,
 ; so the UI runs at medium integrity as in normal use.
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; In-app updates run Setup silently with /UPDATE=1 after the app has quit;
+; relaunch it (as the signed-in user) once the update is in place.
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 [UninstallRun]
 ; Tear down enforcement (tasks, running enforcer/app, hosts-file block, HKLM +
@@ -90,6 +99,41 @@ begin
     Result := -1;
 end;
 
+// True when Setup was started by the app's in-app updater (/UPDATE=1).
+function IsUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
+
+// DisplayVersion of the currently installed copy, or '' if not installed.
+// The key name is AppId (without Inno's brace escaping) + '_is1'.
+function InstalledVersion(): String;
+var
+  Key: String;
+begin
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{B6E3F7A2-9C4D-4E1B-8A3F-0F2C7D5E9A10}_is1';
+  if not RegQueryStringValue(HKLM64, Key, 'DisplayVersion', Result) then
+    if not RegQueryStringValue(HKLM32, Key, 'DisplayVersion', Result) then
+      Result := '';
+end;
+
+// Asks the installed app whether a focus session (manual lock or schedule
+// window) is active: `focus-lock.exe --session-active` exits 3 if so. Copies
+// installed by the pre-calendar-version installer (DisplayVersion 1.0.0) don't
+// know the flag and would open the UI and block Setup, so they are not asked;
+// the app-side check in the updater still applies to them.
+function SessionActive(): Boolean;
+var
+  Exe, Ver: String;
+begin
+  Result := False;
+  Exe := ExpandConstant('{app}\{#AppExe}');
+  Ver := InstalledVersion();
+  if (Ver = '') or (Ver = '1.0.0') or not FileExists(Exe) then
+    Exit;
+  Result := RunHidden(Exe, '--session-active') = 3;
+end;
+
 // Upgrade: the running enforcer (and the app) hold {app}\{#AppExe} open, and the
 // task's 1-minute repetition would relaunch a killed enforcer mid-copy. Disable
 // the task, end it and stop every focus-lock.exe so the file can be replaced.
@@ -100,6 +144,13 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   RC: Integer;
 begin
+  // Never swap the exe out from under a running focus session. Returning a
+  // message aborts Setup before anything is stopped or copied.
+  if SessionActive() then begin
+    Result := 'A Focus Lock session is active (a timer lock or a schedule window).' + #13#10 +
+      'Run Setup again after the session ends.';
+    Exit;
+  end;
   EnforcerTaskDisabled := RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/change /tn "{#EnforcerTask}" /disable') = 0;
   RC := RunHidden(ExpandConstant('{sys}\schtasks.exe'), '/end /tn "{#EnforcerTask}"');
   RC := RunHidden(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExe}');
