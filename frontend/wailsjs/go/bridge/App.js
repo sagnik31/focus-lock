@@ -14,6 +14,18 @@ export function AddBlockedSites(arg1) {
   return window['go']['bridge']['App']['AddBlockedSites'](arg1);
 }
 
+export function AutoCheckForUpdate() {
+  return window['go']['bridge']['App']['AutoCheckForUpdate']();
+}
+
+export function CheckForUpdate() {
+  return window['go']['bridge']['App']['CheckForUpdate']();
+}
+
+export function DownloadUpdate() {
+  return window['go']['bridge']['App']['DownloadUpdate']();
+}
+
 export function EmergencyUnlock() {
   return window['go']['bridge']['App']['EmergencyUnlock']();
 }
@@ -66,8 +78,20 @@ export function GetTopBlockedApps() {
   return window['go']['bridge']['App']['GetTopBlockedApps']();
 }
 
+export function GetUpdateState() {
+  return window['go']['bridge']['App']['GetUpdateState']();
+}
+
+export function GetVersion() {
+  return window['go']['bridge']['App']['GetVersion']();
+}
+
 export function ImportSettings(arg1) {
   return window['go']['bridge']['App']['ImportSettings'](arg1);
+}
+
+export function InstallUpdate() {
+  return window['go']['bridge']['App']['InstallUpdate']();
 }
 
 export function RemoveApp(arg1) {

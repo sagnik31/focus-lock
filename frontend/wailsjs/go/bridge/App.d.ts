@@ -9,6 +9,12 @@ export function AddBlockedSite(arg1:string):Promise<void>;
 
 export function AddBlockedSites(arg1:Array<string>):Promise<void>;
 
+export function AutoCheckForUpdate():Promise<string>;
+
+export function CheckForUpdate():Promise<string>;
+
+export function DownloadUpdate():Promise<string>;
+
 export function EmergencyUnlock():Promise<void>;
 
 export function ExportSettings():Promise<string>;
@@ -35,7 +41,13 @@ export function GetSiteGroups():Promise<Array<storage.SiteGroup>>;
 
 export function GetTopBlockedApps():Promise<Array<sysinfo.AppInfo>>;
 
+export function GetUpdateState():Promise<string>;
+
+export function GetVersion():Promise<string>;
+
 export function ImportSettings(arg1:string):Promise<void>;
+
+export function InstallUpdate():Promise<string>;
 
 export function RemoveApp(arg1:string):Promise<void>;
 

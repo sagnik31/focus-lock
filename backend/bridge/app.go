@@ -10,6 +10,7 @@ import (
 	"focus-lock/backend/watchdog"
 	"os"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,9 @@ import (
 type App struct {
 	ctx   context.Context
 	Store *storage.Store
+
+	updOnce sync.Once
+	upd     *updateManager // in-app updates (update.go); use a.updates()
 }
 
 // NewApp creates a new App application struct
