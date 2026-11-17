@@ -1,0 +1,127 @@
+# Weekly automated release of Focus Lock (see HANDOVER.md §7.3).
+#
+# Every Sunday 02:00 UTC (cron can start late under load) this takes the latest
+# main, gates it on Go vet/tests and the frontend typecheck, builds the
+# installer and publishes it as a GitHub Release tagged vYYYY.M.D.N. A
+# scheduled run with no commits since the last release tag is skipped; a
+# manual "Run workflow" always releases (hotfixes).
+#
+# Note: GitHub disables scheduled workflows after 60 days without repository
+# activity; re-enable it in the Actions tab if that happens.
+name: release
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout (full history + tags)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether to release
+        id: check
+        run: |
+          $last = git describe --tags --abbrev=0 --match "v*" 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $last) {
+            Write-Host "No previous release tag; releasing."
+            $global:LASTEXITCODE = 0
+            "release=true" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          $count = [int](git rev-list "$last..HEAD" --count)
+          Write-Host "Last release: $last; commits since: $count"
+          if ($count -eq 0 -and '${{ github.event_name }}' -eq 'schedule') {
+            Write-Host "No commits since $last; skipping this week's release."
+            "release=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "release=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Compute calendar version
+        id: version
+        if: steps.check.outputs.release == 'true'
+        run: |
+          $d = [DateTime]::UtcNow
+          $day = "$($d.Year).$($d.Month).$($d.Day)"
+          $n = @(git tag --list "v$day.*").Count
+          $ver = "$day.$n"
+          Write-Host "Version: $ver"
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Set up Go
+        if: steps.check.outputs.release == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        if: steps.check.outputs.release == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Wails CLI and Inno Setup
+        if: steps.check.outputs.release == 'true'
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+          $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
+            Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
+          }
+
+      - name: Gate - frontend typecheck and build
+        if: steps.check.outputs.release == 'true'
+        working-directory: frontend
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+          npx tsc --noEmit
+          if ($LASTEXITCODE -ne 0) { throw "tsc failed" }
+          # main.go embeds frontend/dist, so it must exist before go vet/test.
+          npm run build
+          if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
+
+      - name: Gate - go vet and tests
+        if: steps.check.outputs.release == 'true'
+        run: |
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { throw "go vet failed" }
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { throw "go test failed" }
+
+      - name: Build installer
+        if: steps.check.outputs.release == 'true'
+        run: ./scripts/build_installer.ps1 -Version '${{ steps.version.outputs.version }}'
+
+      - name: Publish GitHub Release
+        if: steps.check.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $out = 'installer/Output'
+          $assets = @("$out/FocusLock-Setup-$env:VERSION.exe", "$out/FocusLock-Setup.exe", "$out/SHA256SUMS.txt")
+          foreach ($a in $assets) { if (-not (Test-Path $a)) { throw "Missing asset: $a" } }
+          Get-Content "$out/SHA256SUMS.txt"
+          gh release create "v$env:VERSION" --target $env:GITHUB_SHA --title "Focus Lock $env:VERSION" --generate-notes @assets
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
