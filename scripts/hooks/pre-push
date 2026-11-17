@@ -1,17 +1,26 @@
 #!/bin/sh
-# Focus Lock pre-push hook: build the app and refresh the desktop shortcut on
-# every push, so the shortcut always launches the newest build.
+# Focus Lock pre-push hook: run the same checks as the weekly release gate
+# (.github/workflows/release.yml) so a push doesn't break the next release.
+# It no longer builds or deploys: the installed app updates itself from GitHub
+# Releases, and a dev copy in %APPDATA% clashed with it. Run
+# scripts/deploy.ps1 by hand when you want a local dev build.
 #
 # Enable once with:  git config core.hooksPath scripts/hooks
 # Skip for one push:  git push --no-verify
 
 repo="$(git rev-parse --show-toplevel)" || exit 0
+cd "$repo" || exit 0
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$repo/scripts/deploy.ps1"
-status=$?
+fail() {
+	echo "pre-push: $1 failed; push aborted. Use 'git push --no-verify' to push anyway." 1>&2
+	exit 1
+}
 
-if [ "$status" -ne 0 ]; then
-	echo "pre-push: build/deploy failed; push aborted. Use 'git push --no-verify' to push anyway." 1>&2
+# main.go embeds frontend/dist, which go vet/test need to exist.
+if [ ! -d frontend/dist ]; then
+	(cd frontend && npm run build) || fail "frontend build"
 fi
-
-exit $status
+go vet ./... || fail "go vet"
+go test ./... || fail "go test"
+(cd frontend && npx tsc --noEmit) || fail "frontend typecheck"
+exit 0

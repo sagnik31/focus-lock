@@ -2,8 +2,13 @@
 #
 # Builds the app (frontend + backend) from the current working tree, copies the
 # result to a stable location, and points the desktop shortcut at it so the
-# shortcut always launches the newest build. Invoked automatically by the
-# pre-push git hook (scripts/hooks/pre-push); can also be run by hand.
+# shortcut always launches the newest build. A manual dev tool: run it by hand
+# (the pre-push hook no longer calls it).
+#
+# Don't use it on a machine with the installed app: the installed copy updates
+# itself from GitHub Releases, and this dev copy (%APPDATA%\FocusLock) and its
+# desktop shortcut would sit alongside it. Dev builds report version "dev" and
+# never offer updates.
 #
 # The enforcer is the same exe as the UI, run with --enforce. Updating the exe
 # below updates both; the enforcer change applies on the NEXT REBOOT, because the
