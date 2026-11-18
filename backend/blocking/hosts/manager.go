@@ -176,10 +176,11 @@ func ExpandDomains(inputs []string) []string {
 		unique["mobile."+domain] = true
 
 		// 2. Popular Site Expansion
-		// Check if the domain (or its root) matches our popular list
-		// Simple check: does the domain end with a key in popularSites?
+		// Does the domain equal a popular root or sit under it? The check
+		// needs the dot boundary: a bare suffix test matched "netflix.com"
+		// and "dropbox.com" against "x.com" and blocked X as well.
 		for root, subs := range popularSites {
-			if strings.HasSuffix(domain, root) {
+			if domain == root || strings.HasSuffix(domain, "."+root) {
 				for _, sub := range subs {
 					unique[sub] = true
 				}

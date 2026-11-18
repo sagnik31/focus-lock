@@ -1,6 +1,9 @@
 package hosts
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCleanDomain(t *testing.T) {
 	cases := map[string]string{
@@ -71,5 +74,32 @@ func TestExpandDomainsDeterministic(t *testing.T) {
 				t.Fatalf("order changed at %d: %q vs %q", j, got[j], first[j])
 			}
 		}
+	}
+}
+
+// Popular-site expansion must respect the dot boundary: blocking netflix.com
+// or dropbox.com must not pull in x.com's subdomains, nor notreddit.com
+// reddit's.
+func TestExpandDomainsPopularNeedsDotBoundary(t *testing.T) {
+	for _, in := range []string{"netflix.com", "dropbox.com", "roblox.com", "notreddit.com"} {
+		for _, d := range ExpandDomains([]string{in}) {
+			if strings.HasSuffix(d, ".x.com") || d == "x.com" {
+				t.Errorf("ExpandDomains(%q) includes %q (X)", in, d)
+			}
+			if in != "notreddit.com" {
+				continue
+			}
+			if strings.HasSuffix(d, ".reddit.com") && !strings.HasSuffix(d, ".notreddit.com") {
+				t.Errorf("ExpandDomains(%q) includes %q (reddit)", in, d)
+			}
+		}
+	}
+	// A subdomain of a popular root still expands.
+	set := map[string]bool{}
+	for _, d := range ExpandDomains([]string{"www.youtube.com"}) {
+		set[d] = true
+	}
+	if !set["music.youtube.com"] {
+		t.Error("www.youtube.com should still expand to music.youtube.com")
 	}
 }
