@@ -270,22 +270,15 @@ function App() {
     };
 
     if (isLocked && config) {
-        // Determine which end time to show
-        let effectiveEndTime = config.lock_end_time;
-        if (activeScheduleEndTime) {
-            // If manual lock is ALSO active and ends later, use that? 
-            // Logic: If manual lock is active, use it. If not, use schedule.
-            // But what if both? Usually manual overrides.
-            // Let's check logic: isLocked is OR.
-            const manualActive = config.lock_end_time && new Date(config.lock_end_time) > trustedNow();
-            if (!manualActive) {
-                effectiveEndTime = activeScheduleEndTime.toISOString();
-            } else {
-                // Both active? Show whichever is longer? Or just manual?
-                // Let's default to max of both to be safe, or just stick to manual if present.
-                // If manual is active, user specifically requested it.
-            }
-        }
+        // Enforcement lasts until BOTH the manual lock and the schedule window
+        // are over, so the lock screen counts down to whichever ends later.
+        // (Showing the schedule's end while a longer manual lock ran made the
+        // countdown reach zero early and offer a Quit that the backend refused.)
+        const manualEnd = config.lock_end_time && new Date(config.lock_end_time) > trustedNow()
+            ? new Date(config.lock_end_time)
+            : null;
+        const scheduleEndsLast = !!activeScheduleEndTime && (!manualEnd || activeScheduleEndTime > manualEnd);
+        const effectiveEndTime = (scheduleEndsLast ? activeScheduleEndTime : manualEnd)?.toISOString() ?? config.lock_end_time;
 
         // If user wants to see settings during active session
         if (focusViewMode === 'settings') {
@@ -327,12 +320,12 @@ function App() {
 
         return (
             <FocusActive
-                endTime={activeScheduleEndTime?.toString() || config.lock_end_time}
+                endTime={effectiveEndTime}
                 blockedApps={config.blocked_apps || []}
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
                 pausedUntil={config.paused_until}
-                isSchedule={!!activeScheduleEndTime}
+                isSchedule={scheduleEndsLast}
                 emergencyUnlocksUsed={config.emergency_unlocks_used || 0}
                 onShowSettings={() => setFocusViewMode('settings')}
                 onQuit={handleQuit}
