@@ -72,7 +72,9 @@ At a high level:
   for blocked applications and keeps the `hosts`-based website blocks in place. It runs
   independently of the UI so that closing the window does not end a session.
 - Configuration and session state are stored locally as JSON under your Windows user
-  profile.
+  profile. In strong mode the enforcer also keeps a signed copy in `%ProgramData%\FocusLock`,
+  which only administrators can change, so deleting or replacing the files in your profile
+  doesn't change an active session.
 
 Focus Lock is Windows-only. The repository contains stub implementations for other
 platforms so the project compiles elsewhere, but the enforcement features require Windows.
@@ -141,7 +143,7 @@ the details are in `%TEMP%\FocusLock-setup.log`.
 
 Uninstalling (from **Settings → Apps**) stops the enforcer and the app, removes the scheduled
 task, any active `hosts`-file block, the `HKLM` and `HKCU` state, both Defender exclusions,
-and `%APPDATA%\FocusLock` (log: `%TEMP%\FocusLock-uninstall.log`).
+`%APPDATA%\FocusLock` and `%ProgramData%\FocusLock` (log: `%TEMP%\FocusLock-uninstall.log`).
 
 A manual verification checklist for the installer is in
 [`installer/TESTING.md`](installer/TESTING.md).

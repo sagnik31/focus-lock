@@ -165,3 +165,11 @@ running. Any installed build from `main` after `1f46f89` (or `wails build`) will
 - [ ] **Schedules can't be re-timed mid-session (G2/G3).** During a schedule window there is no
       Edit/Delete/toggle on schedules. Use both emergency unlocks, then start a 1-minute focus from
       Settings: the unlock button stays at the limit.
+- [ ] **Deleting the config doesn't end a session (G10).** After installing a build with
+      `0c69fff`, `%ProgramData%\FocusLock` exists and a non-admin Explorer window can't open it.
+      Start a 10-minute session with an app and a site blocked. In an admin PowerShell run
+      `schtasks /End /TN "FocusLock Enforcer"`, stop `focus-lock.exe --enforce` in Task Manager,
+      and delete `config.json`, `config.json.sig`, `config.json.bak` and `config.json.bak.sig`
+      from `%APPDATA%\FocusLock`. Within a minute the enforcer is back, the four files are back,
+      the app and site are still blocked, schedules are intact and no "could not be recovered"
+      banner shows. Uninstall removes `%ProgramData%\FocusLock`.
