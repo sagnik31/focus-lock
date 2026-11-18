@@ -58,57 +58,83 @@ func (a *App) SetBlockedApps(apps []string) error {
 	return a.applyOp(storage.Operation{Type: storage.OpSetApps, Apps: apps})
 }
 
-// GetTopBlockedApps returns the top 5 most blocked apps by duration
+// topAppsLimit is how many quick-add suggestions GetTopBlockedApps returns.
+const topAppsLimit = 5
+
+// GetTopBlockedApps returns the most-blocked installed apps as quick-add
+// suggestions. It ranks by focus time spent blocked (recorded only when the
+// UI can sign, i.e. reduced mode) and then by how often the enforcer closed
+// the app (kill_counts, recorded by the Ghost in strong mode too), so the
+// list is no longer always empty on an installed, strong-mode machine.
 func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
-	durationMap := a.Store.GetBlockedDuration()
-
-	type kv struct {
-		Key      string
-		Duration int64
-	}
-
-	var ss []kv
-	for k, v := range durationMap {
-		ss = append(ss, kv{k, v})
-	}
-
-	sort.Slice(ss, func(i, j int) bool {
-		if ss[i].Duration != ss[j].Duration {
-			return ss[i].Duration > ss[j].Duration // Duration Descending
-		}
-		return strings.ToLower(ss[i].Key) < strings.ToLower(ss[j].Key) // Name Ascending (Alphabetical)
-	})
-
-	// Get top 5
-	topCount := 5
-	if len(ss) < topCount {
-		topCount = len(ss)
-	}
-
-	topApps := []string{}
-	for i := 0; i < topCount; i++ {
-		topApps = append(topApps, ss[i].Key)
-	}
-
-	if len(topApps) == 0 {
+	ranked := rankTopApps(a.Store.GetBlockedDuration(), a.Store.GetKillCounts())
+	if len(ranked) == 0 {
 		return []sysinfo.AppInfo{}, nil // nothing to resolve; skip the scan
 	}
 
-	// Resolve AppInfo
 	installed, err := a.cachedInstalledApps()
 	if err != nil {
-		return []sysinfo.AppInfo{}, err // Return empty slice on error
+		return []sysinfo.AppInfo{}, err
 	}
 
-	result := []sysinfo.AppInfo{} // Initialize as empty slice
-	for _, appName := range topApps {
+	// Take the first topAppsLimit ranked names that resolve to an installed
+	// app (VPN clients or uninstalled apps are skipped, not counted).
+	result := []sysinfo.AppInfo{}
+	for _, name := range ranked {
 		for _, info := range installed {
-			if strings.EqualFold(info.Exe, appName) {
+			if storage.ValidAppName(info.Exe) && strings.EqualFold(info.Exe, name) {
 				result = append(result, info)
 				break
 			}
 		}
+		if len(result) == topAppsLimit {
+			break
+		}
 	}
-
 	return result, nil
+}
+
+// rankTopApps merges the blocked-duration and kill-count stats (keys compared
+// case-insensitively) and returns the app names, most-blocked first: by
+// duration, then kills, then name.
+func rankTopApps(duration map[string]int64, kills map[string]int) []string {
+	type score struct {
+		name  string
+		dur   int64
+		kills int
+	}
+	byKey := map[string]*score{}
+	get := func(name string) *score {
+		k := strings.ToLower(name)
+		if byKey[k] == nil {
+			byKey[k] = &score{name: name}
+		}
+		return byKey[k]
+	}
+	for n, d := range duration {
+		get(n).dur += d
+	}
+	for n, c := range kills {
+		get(n).kills += c
+	}
+	list := make([]*score, 0, len(byKey))
+	for _, s := range byKey {
+		if storage.ValidAppName(s.name) && (s.dur > 0 || s.kills > 0) {
+			list = append(list, s)
+		}
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].dur != list[j].dur {
+			return list[i].dur > list[j].dur
+		}
+		if list[i].kills != list[j].kills {
+			return list[i].kills > list[j].kills
+		}
+		return strings.ToLower(list[i].name) < strings.ToLower(list[j].name)
+	})
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = s.name
+	}
+	return out
 }

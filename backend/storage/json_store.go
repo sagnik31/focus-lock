@@ -463,6 +463,18 @@ func (s *Store) GetBlockedDuration() map[string]int64 {
 	return copyMap
 }
 
+// GetKillCounts returns a copy of the per-app kill counts (recorded by the
+// enforcer in both modes).
+func (s *Store) GetKillCounts() map[string]int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]int, len(s.Data.Stats.KillCounts))
+	for k, v := range s.Data.Stats.KillCounts {
+		out[k] = v
+	}
+	return out
+}
+
 func (s *Store) GetFilePath() string {
 	return s.filePath
 }
