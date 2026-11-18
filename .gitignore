@@ -13,3 +13,4 @@ HANDOVER.md
 # Local Claude Code state: gap-audit reports and per-user settings
 .claude/gap-audits/
 .claude/settings.local.json
+.claude/skills/
