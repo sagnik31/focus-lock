@@ -57,7 +57,14 @@ func writeJSONAtomic(path string, v interface{}) error {
 // SubmitRequest writes a request for the Ghost and blocks until the Ghost
 // writes a matching result or the timeout elapses. It returns the policy
 // error verbatim if the Ghost refused the operation.
+//
+// Requests are serialised per process: the channel is a single request.json
+// slot, so two concurrent submissions used to overwrite each other's request
+// (and delete each other's result), losing one change and timing out.
 func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
+	s.reqMu.Lock()
+	defer s.reqMu.Unlock()
+
 	dir := filepath.Dir(s.filePath)
 	req := Request{ID: newRequestID(), Op: op}
 

@@ -84,6 +84,7 @@ type SessionRecord struct {
 
 type Store struct {
 	mu           sync.Mutex
+	reqMu        sync.Mutex // serialises SubmitRequest (one request slot; see request.go)
 	filePath     string
 	Data         Config
 	regStore     *RegistryStore
