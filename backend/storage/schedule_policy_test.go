@@ -78,3 +78,33 @@ func TestPolicyAllowsHarmlessScheduleEditsWhileLocked(t *testing.T) {
 		t.Errorf("re-timing when idle should be allowed: %v", err)
 	}
 }
+
+func TestStartFocusDuringScheduleDoesNotRefillUnlocks(t *testing.T) {
+	now := at(0, 12, 0) // inside the "work" window
+	cfg := scheduleLockedConfig()
+	for i := 0; i < 2; i++ {
+		if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, now); err != nil {
+			t.Fatalf("unlock %d: %v", i+1, err)
+		}
+	}
+	if err := ApplyOperation(cfg, Operation{Type: OpStartFocus, Seconds: 60}, now); err != nil {
+		t.Fatalf("starting a manual lock during a window should be allowed: %v", err)
+	}
+	if cfg.EmergencyUnlocksUsed != 2 {
+		t.Errorf("EmergencyUnlocksUsed = %d, want 2 (no refill mid-window)", cfg.EmergencyUnlocksUsed)
+	}
+	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, now); err == nil {
+		t.Error("a third unlock in the same window must still be refused")
+	}
+
+	// Outside any window, a fresh manual lock still refills.
+	idle := at(0, 18, 0)
+	cfg = scheduleLockedConfig()
+	cfg.EmergencyUnlocksUsed = 2
+	if err := ApplyOperation(cfg, Operation{Type: OpStartFocus, Seconds: 60}, idle); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.EmergencyUnlocksUsed != 0 {
+		t.Errorf("a fresh lock outside a window should refill, got %d", cfg.EmergencyUnlocksUsed)
+	}
+}

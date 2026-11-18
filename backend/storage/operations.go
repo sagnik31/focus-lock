@@ -252,7 +252,13 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 		// Fresh lock.
 		cfg.LockEndTime = newEnd
 		cfg.RemainingDuration = time.Duration(op.Seconds) * time.Second
-		cfg.EmergencyUnlocksUsed = 0
+		// A new manual session gets a fresh unlock quota, but not while a
+		// schedule window is enforcing: the quota is shared with it, and
+		// refilling here let a 1-minute lock buy unlimited pauses of the
+		// schedule.
+		if !SchedulesActiveAt(cfg.Schedules, now) {
+			cfg.EmergencyUnlocksUsed = 0
+		}
 		cfg.SessionStart = now // marks the start for history; recorded when the session ends
 	}
 
