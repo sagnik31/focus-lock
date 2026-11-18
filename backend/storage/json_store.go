@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -98,6 +99,13 @@ type Store struct {
 	strong  bool
 	canSign bool
 
+	// secureDir holds an admin-only copy of the signed config
+	// (%ProgramData%\FocusLock, SYSTEM + Administrators only). It is set only
+	// for the strong-mode signer (the elevated Ghost). The files in %APPDATA%
+	// are the user's to delete or replace with an older signed copy; this one
+	// is not, so loadInternal trusts it first (see loadSecure).
+	secureDir string
+
 	// ownWrite is config.json's modification time right after this Store's
 	// last successful save. The enforcer compares it with the file's current
 	// mtime to tell its own routine writes (remaining time, stats) from
@@ -151,6 +159,9 @@ func NewStore() (*Store, error) {
 	store.activeSecret = secret
 	store.strong = strong
 	store.canSign = canSign
+	if strong && canSign {
+		store.secureDir = secureBackupDir()
+	}
 
 	return store, nil
 }
@@ -188,6 +199,14 @@ func (s *Store) loadInternal() error {
 		if err == nil {
 			_ = json.Unmarshal(data, &s.Data)
 		}
+		return nil
+	}
+
+	// 1. The admin-only copy wins when it verifies. Deleting the user-writable
+	//    files, or putting back an older signed config.json (fewer sites, an
+	//    expired lock), can then never change what is enforced: the primary is
+	//    rewritten from the secure copy instead.
+	if s.loadSecure(data, err == nil) {
 		return nil
 	}
 
@@ -333,6 +352,17 @@ func (s *Store) saveInternal() error {
 	}
 	sig := s.computeHMAC(data)
 
+	// 0. The admin-only copy first (strong-mode signer only; see loadSecure).
+	//    If it can't be written, remove it: a stale secure copy would be
+	//    preferred over this newer save on the next load and undo it.
+	if s.secureDir != "" {
+		sp := s.securePath()
+		if atomicWrite(sp, data) != nil || atomicWrite(sp+".sig", []byte(sig)) != nil {
+			_ = os.Remove(sp)
+			_ = os.Remove(sp + ".sig")
+		}
+	}
+
 	// 1. Write config + signature atomically (temp file + rename). A crash or
 	//    power loss mid-write can then never leave a truncated/half-written
 	//    config.json. Without this, an unclean shutdown corrupts the file, the
@@ -397,6 +427,40 @@ func atomicWrite(path string, data []byte) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Store) securePath() string { return filepath.Join(s.secureDir, "config.json") }
+
+// loadSecure loads the config from the admin-only copy when there is one and
+// its signature verifies, and heals the user-visible primary (config.json and
+// its .sig) when it differs, is missing or was replaced. primary is the
+// current config.json content (havePrimary false when it couldn't be read).
+// It returns false, leaving s.Data alone, when there is no usable secure copy;
+// the caller then falls back to the primary and the .bak.
+func (s *Store) loadSecure(primary []byte, havePrimary bool) bool {
+	if s.secureDir == "" {
+		return false
+	}
+	sp := s.securePath()
+	sdata, err := os.ReadFile(sp)
+	if err != nil {
+		return false
+	}
+	ssig, err := os.ReadFile(sp + ".sig")
+	if err != nil || s.computeHMAC(sdata) != string(ssig) {
+		return false
+	}
+	var cfg Config
+	if err := json.Unmarshal(sdata, &cfg); err != nil {
+		return false
+	}
+	s.Data = cfg
+
+	psig, sigErr := os.ReadFile(s.filePath + ".sig")
+	if !havePrimary || !bytes.Equal(primary, sdata) || sigErr != nil || string(psig) != string(ssig) {
+		_ = s.saveInternal()
+	}
+	return true
 }
 
 // restoreFromBackup loads the full config from the signed .bak file written on

@@ -19,6 +19,10 @@
 #      separate staged or hidden copy.
 #   4. Provision the tamper-protection HMAC secret in HKLM (ACL: SYSTEM +
 #      Administrators only) and mark strong mode as provisioned.
+#      Also create %ProgramData%\FocusLock with the same SYSTEM + Administrators
+#      only ACL: the enforcer keeps an admin-only copy of the signed config
+#      there, so deleting or replacing the files in %APPDATA% can't change an
+#      active session (backend/storage/securebackup_windows.go).
 #   5. Start the enforcer now through the task, so no reboot is needed.
 #
 # Strong mode assumes the account is a local administrator (so HighestAvailable
@@ -76,6 +80,7 @@ $flDir = Join-Path $AppData 'FocusLock'
 $legacyBinDir = Join-Path $flDir 'Bin'    # old staged-exe location, removed on upgrade
 $base = 'HKLM:\SOFTWARE\FocusLock'
 $userBase = 'HKCU:\Software\FocusLock'    # reduced-mode secret + state backup
+$secureDir = Join-Path $env:ProgramData 'FocusLock' # admin-only signed config copy
 $hostsStart = '#### FOCUS LOCK START ####' # must match backend/blocking/hosts
 $hostsEnd = '#### FOCUS LOCK END ####'
 
@@ -190,6 +195,9 @@ try {
         }
         try { Remove-Item -Path $flDir -Recurse -Force -ErrorAction Stop } catch {
             if (Test-Path $flDir) { Write-Warning "Could not fully remove ${flDir}: $($_.Exception.Message)" }
+        }
+        try { Remove-Item -Path $secureDir -Recurse -Force -ErrorAction Stop } catch {
+            if (Test-Path $secureDir) { Write-Warning "Could not fully remove ${secureDir}: $($_.Exception.Message)" }
         }
         Write-Host "[setup] Teardown complete." -ForegroundColor Green
         return
@@ -312,6 +320,20 @@ try {
         Write-Host "[setup] Existing tamper-protection secret preserved." -ForegroundColor Green
     }
     New-ItemProperty -Path $base -Name 'Provisioned' -PropertyType DWord -Value 1 -Force | Out-Null
+
+    # 4b. Admin-only folder for the enforcer's secure config copy. Same ACL as
+    #     the Security key: protected (nothing inherited from ProgramData, which
+    #     lets Users create files), SYSTEM + Administrators full control, owner
+    #     Administrators. The enforcer re-applies this ACL itself on start.
+    if (-not (Test-Path $secureDir)) { New-Item -ItemType Directory -Path $secureDir -Force | Out-Null }
+    $dirAcl = New-Object System.Security.AccessControl.DirectorySecurity
+    $dirAcl.SetAccessRuleProtection($true, $false)
+    $dirAcl.SetOwner($adminsSid)
+    foreach ($sid in @($adminsSid, $systemSid)) {
+        $dirAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, $prop, $allow)))
+    }
+    Set-Acl -Path $secureDir -AclObject $dirAcl
+    Write-Host "[setup] Secured $secureDir (SYSTEM + Administrators only)." -ForegroundColor Green
 
     # 5. Start the enforcer now (the logon trigger otherwise only fires at the
     #    next sign-in). Best-effort: it also starts at the next logon.
