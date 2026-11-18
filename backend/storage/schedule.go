@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -86,4 +88,89 @@ func dayMatches(days []string, day string) bool {
 		}
 	}
 	return false
+}
+
+// weekDays are the canonical day names the window logic matches (now.Format("Mon")).
+var weekDays = []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+
+// NormalizeSchedule validates a schedule and returns it in the canonical form
+// the window logic relies on: zero-padded 24h "HH:MM" times (the checks
+// compare them as strings, so "9:00" would sort after "17:00") and day names
+// "Mon".."Sun" (full names and any case are accepted), de-duplicated in week
+// order. It rejects a missing ID, unparseable times, equal start and end
+// (a window that never runs), and an empty or unknown day list.
+func NormalizeSchedule(s Schedule) (Schedule, error) {
+	label := strings.TrimSpace(s.Name)
+	if label == "" {
+		label = "unnamed"
+	}
+	if strings.TrimSpace(s.ID) == "" {
+		return s, fmt.Errorf("schedule %q is missing an id", label)
+	}
+	start, err := normalizeClock(s.StartTime)
+	if err != nil {
+		return s, fmt.Errorf("schedule %q: start time %w", label, err)
+	}
+	end, err := normalizeClock(s.EndTime)
+	if err != nil {
+		return s, fmt.Errorf("schedule %q: end time %w", label, err)
+	}
+	if start == end {
+		return s, fmt.Errorf("schedule %q: start and end time can't be the same", label)
+	}
+	want := map[string]bool{}
+	for _, d := range s.Days {
+		d = strings.TrimSpace(d)
+		if len(d) < 3 {
+			return s, fmt.Errorf("schedule %q: unknown day %q", label, d)
+		}
+		canon := strings.ToUpper(d[:1]) + strings.ToLower(d[1:3])
+		full := strings.ToLower(d)
+		ok := false
+		for _, wd := range weekDays {
+			if canon == wd && (len(d) == 3 || strings.HasPrefix(longDayName(wd), full)) {
+				want[wd] = true
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return s, fmt.Errorf("schedule %q: unknown day %q", label, d)
+		}
+	}
+	if len(want) == 0 {
+		return s, fmt.Errorf("schedule %q needs at least one day", label)
+	}
+	days := make([]string, 0, len(want))
+	for _, wd := range weekDays {
+		if want[wd] {
+			days = append(days, wd)
+		}
+	}
+	s.StartTime, s.EndTime, s.Days = start, end, days
+	return s, nil
+}
+
+func longDayName(short string) string {
+	for d := time.Sunday; d <= time.Saturday; d++ {
+		if d.String()[:3] == short {
+			return strings.ToLower(d.String())
+		}
+	}
+	return ""
+}
+
+// normalizeClock parses "H:MM" or "HH:MM" (24h) and returns "HH:MM".
+func normalizeClock(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	h, m, ok := strings.Cut(v, ":")
+	if !ok || len(h) < 1 || len(h) > 2 || len(m) != 2 || strings.Trim(h+m, "0123456789") != "" {
+		return "", fmt.Errorf("%q is not a 24-hour HH:MM time", v)
+	}
+	hh, err1 := strconv.Atoi(h)
+	mm, err2 := strconv.Atoi(m)
+	if err1 != nil || err2 != nil || hh < 0 || hh > 23 || mm < 0 || mm > 59 {
+		return "", fmt.Errorf("%q is not a 24-hour HH:MM time", v)
+	}
+	return fmt.Sprintf("%02d:%02d", hh, mm), nil
 }

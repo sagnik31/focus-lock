@@ -187,6 +187,18 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 
 	case OpImport:
 		// Import is append-only, so it only ever strengthens.
+		//
+		// Validate every imported schedule before changing anything: a bad
+		// one is refused with its name rather than stored, since an enabled
+		// schedule can't be removed again while anything is locked.
+		imported := make([]Schedule, 0, len(op.Schedules))
+		for _, s := range op.Schedules {
+			ns, err := NormalizeSchedule(s)
+			if err != nil {
+				return errors.New("import refused: " + err.Error())
+			}
+			imported = append(imported, ns)
+		}
 		for _, a := range ValidApps(op.Apps) {
 			cfg.BlockedApps = addUnique(cfg.BlockedApps, a)
 		}
@@ -195,7 +207,7 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 			cfg.BlockedSites = addUnique(cfg.BlockedSites, s)
 		}
 		sort.Strings(cfg.BlockedSites)
-		cfg.Schedules = append(cfg.Schedules, op.Schedules...)
+		cfg.Schedules = append(cfg.Schedules, imported...)
 		if err := mergeSiteGroups(cfg, op.SiteGroups); err != nil {
 			return err
 		}
@@ -291,6 +303,18 @@ func applyScheduleUnlockReset(cfg *Config, now time.Time) bool {
 }
 
 func applySaveSchedules(cfg *Config, op Operation, locked bool) error {
+	// Validate and normalise every schedule first (HH:MM, Mon..Sun), so the
+	// string-compared window logic never sees "9:00" or "monday".
+	schedules := make([]Schedule, 0, len(op.Schedules))
+	for _, s := range op.Schedules {
+		ns, err := NormalizeSchedule(s)
+		if err != nil {
+			return err
+		}
+		schedules = append(schedules, ns)
+	}
+	op.Schedules = schedules
+
 	if locked {
 		// A previously-enabled schedule may not be deleted, disabled or
 		// re-timed (days, start, end) while anything is being enforced:
@@ -310,6 +334,11 @@ func applySaveSchedules(cfg *Config, op Operation, locked bool) error {
 			}
 			if !ns.Enabled {
 				return errors.New("cannot disable active schedules during an active focus session")
+			}
+			// Compare against the normalised old schedule, so a schedule
+			// stored as "9:00" by an older build doesn't count as re-timed.
+			if o, err := NormalizeSchedule(old); err == nil {
+				old = o
 			}
 			if ns.StartTime != old.StartTime || ns.EndTime != old.EndTime || !sameDays(ns.Days, old.Days) {
 				return errors.New("cannot change the days or times of enabled schedules during an active focus session")
