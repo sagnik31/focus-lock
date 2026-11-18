@@ -14,71 +14,94 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
     const [editingSchedule, setEditingSchedule] = useState<storage.Schedule | null>(null);
     const [isCreating, setIsCreating] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [saveError, setSaveError] = useState("");
 
-    // Load Schedules on Mount
+    // Load on mount, and again when a session starts or ends (the backend's
+    // rules for what may change depend on it).
     useEffect(() => {
         loadSchedules();
-    }, []);
+    }, [isLocked]);
 
-    const loadSchedules = async () => {
+    const loadSchedules = async (): Promise<storage.Schedule[]> => {
         try {
-            const data = await GetSchedules();
-            setSchedules(data || []);
+            const data = (await GetSchedules()) || [];
+            setSchedules(data);
+            return data;
         } catch (err) {
             console.error("Failed to load schedules", err);
+            return schedules;
         } finally {
             setIsLoading(false);
         }
     };
 
+    // Every change is applied to the backend's CURRENT list (not this
+    // component's copy, which may predate an import), then the list is
+    // reloaded. A refusal (e.g. editing an enabled schedule mid-session) is
+    // shown and the list goes back to what the backend actually holds.
+    // Returns whether the save went through.
+    const persist = async (change: (current: storage.Schedule[]) => storage.Schedule[]): Promise<boolean> => {
+        setSaveError("");
+        try {
+            const current = (await GetSchedules()) || [];
+            await SaveSchedules(change(current));
+            await loadSchedules();
+            return true;
+        } catch (err: any) {
+            setSaveError(String(err));
+            await loadSchedules();
+            return false;
+        }
+    };
+
     const handleSave = async (schedule: storage.Schedule) => {
-        let newSchedules: storage.Schedule[];
-
-        // Ensure proper typing for creating vs updating
-        // The editor returns a partial schedule compatible object, 
-        // we might need to ensure it matches the exact storage.Schedule type structure
-
-        if (isCreating) {
-            newSchedules = [...schedules, schedule];
+        const creating = isCreating;
+        const saved = await persist(current => creating
+            ? [...current, schedule]
+            : current.map(s => s.id === schedule.id ? schedule : s));
+        if (saved) {
             setIsCreating(false);
-        } else {
-            newSchedules = schedules.map(s => s.id === schedule.id ? schedule : s);
             setEditingSchedule(null);
         }
-
-        setSchedules(newSchedules); // Optimistic update
-        await SaveSchedules(newSchedules);
     };
 
-    const handleDelete = async (id: string) => {
-        const newSchedules = schedules.filter(s => s.id !== id);
-        setSchedules(newSchedules); // Optimistic
-        await SaveSchedules(newSchedules);
+    const handleDelete = (id: string) => {
+        persist(current => current.filter(s => s.id !== id));
     };
 
-    const toggleEnabled = async (id: string) => {
-        const newSchedules = schedules.map(s =>
-            s.id === id ? { ...s, enabled: !s.enabled } : s
-        );
-        setSchedules(newSchedules); // Optimistic
-        await SaveSchedules(newSchedules);
+    const toggleEnabled = (id: string) => {
+        persist(current => current.map(s =>
+            s.id === id ? new storage.Schedule({ ...s, enabled: !s.enabled }) : s
+        ));
     };
+
+    const errorBanner = saveError && (
+        <div role="alert" className="mb-3 bg-red-500/10 border border-red-500/20 text-red-200 px-3 py-2 rounded-lg text-xs flex items-start justify-between gap-2 shrink-0">
+            <span>{saveError}</span>
+            <button onClick={() => setSaveError("")} aria-label="Dismiss" className="text-red-300 hover:text-white">×</button>
+        </div>
+    );
 
     if (isCreating || editingSchedule) {
         return (
-            <ScheduleEditor
-                schedule={editingSchedule}
-                onSave={handleSave}
-                onCancel={() => {
-                    setIsCreating(false);
-                    setEditingSchedule(null);
-                }}
-            />
+            <div>
+                {errorBanner}
+                <ScheduleEditor
+                    schedule={editingSchedule}
+                    onSave={handleSave}
+                    onCancel={() => {
+                        setIsCreating(false);
+                        setEditingSchedule(null);
+                        setSaveError("");
+                    }}
+                />
+            </div>
         );
     }
 
     return (
         <div className="flex flex-col h-full overflow-hidden">
+            {errorBanner}
             <div className="flex justify-between items-center mb-4 shrink-0">
                 <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Schedules</h3>
                 <button
