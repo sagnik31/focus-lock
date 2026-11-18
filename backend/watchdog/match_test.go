@@ -36,3 +36,21 @@ func TestDeepMatchIgnoresEmptyBlockedName(t *testing.T) {
 		t.Error(`a ".exe"-only blocked name must not match`)
 	}
 }
+
+func TestDeepMatchIgnoresJunkAndShortNames(t *testing.T) {
+	// "." used to reach the block list for apps with no resolved exe and
+	// matched every process with a dot in its metadata.
+	if deepMatch("Microsoft .NET", ".NET Host", []string{"."}) {
+		t.Error(`"." must not match`)
+	}
+	if deepMatch("Node.js", "Node.js JavaScript Runtime", []string{"..exe"}) {
+		t.Error(`"..exe" must not match`)
+	}
+	// Very short names are left to the exact-name fast loop.
+	if deepMatch("Tencent QQ", "QQ", []string{"qq.exe"}) {
+		t.Error("a two-letter name must not be substring-matched")
+	}
+	if !deepMatch("Discord", "", []string{"discord.exe", "."}) {
+		t.Error("a real name next to junk must still match")
+	}
+}

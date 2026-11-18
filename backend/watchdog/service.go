@@ -59,7 +59,9 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 		if err := store.Load(); err != nil {
 			return nil, nil, err
 		}
-		apps := store.Data.BlockedApps
+		// Junk entries (e.g. "." saved by older builds for an app whose exe
+		// could not be resolved) are ignored so they can never match broadly.
+		apps := storage.ValidApps(store.Data.BlockedApps)
 		if store.Data.BlockCommonVPN {
 			apps = append(apps, protection.GetVPNExecutables()...)
 		}

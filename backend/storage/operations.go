@@ -111,6 +111,9 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		if name == "" {
 			return errors.New("app name cannot be empty")
 		}
+		if !ValidAppName(name) {
+			return errors.New("\"" + name + "\" is not a valid app name; use the program's .exe name")
+		}
 		cfg.BlockedApps = addUnique(cfg.BlockedApps, name)
 		sort.Strings(cfg.BlockedApps)
 		return nil
@@ -125,10 +128,13 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 	case OpSetApps:
 		// Wholesale replace. During a lock this may only ADD: the new set
 		// must contain every currently blocked app, or it is a removal.
-		if locked && !isSuperset(op.Apps, cfg.BlockedApps) {
+		// Invalid names (e.g. "." from an app with no resolved exe) are
+		// dropped: they never blocked anything useful, so dropping one is
+		// not a weakening and is allowed even mid-lock.
+		apps := ValidApps(op.Apps)
+		if locked && !isSuperset(apps, ValidApps(cfg.BlockedApps)) {
 			return errors.New("cannot remove apps during an active focus session")
 		}
-		apps := append([]string{}, op.Apps...)
 		sort.Strings(apps)
 		cfg.BlockedApps = apps
 		return nil
@@ -181,7 +187,7 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 
 	case OpImport:
 		// Import is append-only, so it only ever strengthens.
-		for _, a := range op.Apps {
+		for _, a := range ValidApps(op.Apps) {
 			cfg.BlockedApps = addUnique(cfg.BlockedApps, a)
 		}
 		sort.Strings(cfg.BlockedApps)

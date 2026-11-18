@@ -107,10 +107,16 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 				key = "nopath:" + strings.ToLower(name)
 			}
 
+			// Exe stays "" when no path was found: filepath.Base("") is ".",
+			// which used to end up in the block list (see storage.ValidAppName).
+			exe := ""
+			if exePath != "" {
+				exe = filepath.Base(exePath)
+			}
 			if _, exists := apps[key]; !exists {
 				apps[key] = AppInfo{
 					Name:     name,
-					Exe:      filepath.Base(exePath),
+					Exe:      exe,
 					FullPath: exePath,
 					Source:   "Registry",
 				}

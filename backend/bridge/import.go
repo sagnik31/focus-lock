@@ -43,6 +43,20 @@ type ImportSchedule struct {
 // Returns the executable name (e.g., "WhatsApp.exe") if found, otherwise returns the original input
 func resolveAppName(inputName string, installedApps []sysinfo.AppInfo) string {
 	inputLower := strings.ToLower(strings.TrimSpace(inputName))
+	if inputLower == "" {
+		return inputName
+	}
+
+	// Only installed apps with a real exe name can be match targets: an app
+	// whose exe could not be resolved has Exe "" (older builds: "."), and the
+	// substring rules below would otherwise map almost any input onto it.
+	candidates := make([]sysinfo.AppInfo, 0, len(installedApps))
+	for _, app := range installedApps {
+		if storage.ValidAppName(app.Exe) {
+			candidates = append(candidates, app)
+		}
+	}
+	installedApps = candidates
 
 	// Priority 1: Exact match on exe name (case-insensitive)
 	for _, app := range installedApps {
@@ -58,6 +72,11 @@ func resolveAppName(inputName string, installedApps []sysinfo.AppInfo) string {
 		}
 	}
 
+	// The fuzzy rules need a few characters to be meaningful.
+	if len([]rune(inputLower)) < 3 {
+		return inputName
+	}
+
 	// Priority 3: Input is contained in display name or exe (case-insensitive)
 	for _, app := range installedApps {
 		nameLower := strings.ToLower(app.Name)
@@ -70,6 +89,9 @@ func resolveAppName(inputName string, installedApps []sysinfo.AppInfo) string {
 	// Priority 4: Display name or exe contains input (for partial matches like "Steam" -> "steam.exe")
 	for _, app := range installedApps {
 		exeWithoutExt := strings.TrimSuffix(strings.ToLower(app.Exe), ".exe")
+		if len([]rune(exeWithoutExt)) < 3 {
+			continue
+		}
 		if strings.Contains(inputLower, exeWithoutExt) || strings.Contains(exeWithoutExt, inputLower) {
 			return app.Exe
 		}

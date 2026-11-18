@@ -58,7 +58,12 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocke
         onClose();
     };
 
-    const filteredApps = apps.filter(app =>
+    // Apps whose program file could not be found have no exe name ("" — or
+    // "." from older builds) and can't be blocked by name, so they are not
+    // offered. Selecting one used to put "." in the block list.
+    const blockable = apps.filter(app => /[a-z0-9]/i.test(app.exe.replace(/\.exe$/i, '')));
+    const hiddenCount = apps.length - blockable.length;
+    const filteredApps = blockable.filter(app =>
         app.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         app.exe.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -125,7 +130,12 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocke
                     )}
                 </div>
 
-                <div className="p-4 border-t border-white/5 flex justify-end gap-3">
+                <div className="p-4 border-t border-white/5 flex items-center justify-end gap-3">
+                    {hiddenCount > 0 && !loading && (
+                        <span className="mr-auto text-xs text-slate-500">
+                            {hiddenCount} app{hiddenCount === 1 ? '' : 's'} without a program file hidden; add those by .exe name instead.
+                        </span>
+                    )}
                     <button onClick={onClose} className="px-4 py-2 text-slate-300 hover:text-white rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500">Cancel</button>
                     <button
                         onClick={handleSave}
