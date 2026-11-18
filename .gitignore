@@ -9,3 +9,7 @@ installer/Output/
 
 # Local agent handover notes — keep out of version control
 HANDOVER.md
+
+# Local Claude Code state: gap-audit reports and per-user settings
+.claude/gap-audits/
+.claude/settings.local.json
