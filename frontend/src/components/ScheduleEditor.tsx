@@ -52,8 +52,12 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ schedule, onSave
             setError("Select at least one day");
             return;
         }
-        if (startTime >= endTime) {
-            setError("End time must be after start time");
+        // An end before the start is an overnight window (e.g. 22:00-06:00):
+        // it starts on each selected day and ends the next morning, matching
+        // the backend (storage.ActiveScheduleWindow). Only a zero-length
+        // window is invalid.
+        if (startTime === endTime) {
+            setError("Start and end time can't be the same");
             return;
         }
 
@@ -129,6 +133,11 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ schedule, onSave
                     />
                 </div>
             </div>
+            {endTime < startTime && (
+                <p className="text-xs text-slate-400 -mt-3">
+                    Overnight: starts at {startTime} on each selected day and ends at {endTime} the next day.
+                </p>
+            )}
 
             {/* Actions */}
             <div className="flex gap-3 pt-4">

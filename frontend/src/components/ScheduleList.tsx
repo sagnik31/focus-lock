@@ -105,7 +105,7 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
                                     </h4>
                                     <div className="text-xs text-slate-400 mt-1 flex gap-2">
                                         <span className="font-mono bg-slate-950/30 px-1.5 py-0.5 rounded text-blue-300">
-                                            {schedule.start_time} - {schedule.end_time}
+                                            {schedule.start_time} - {schedule.end_time}{schedule.end_time < schedule.start_time ? ' (+1 day)' : ''}
                                         </span>
                                     </div>
                                 </div>
