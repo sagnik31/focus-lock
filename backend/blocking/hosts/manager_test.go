@@ -12,6 +12,10 @@ func TestCleanDomain(t *testing.T) {
 		"http://reddit.com/r/all":           "reddit.com",
 		"  facebook.com  ":                  "facebook.com",
 		"":                                  "",
+		"httpbin.org":                       "httpbin.org", // starts with "http" but has no scheme
+		"httpstatus.io/404":                 "httpstatus.io",
+		"HTTPS://WWW.YouTube.com/watch":     "www.youtube.com",
+		"YouTube.com":                       "youtube.com",
 	}
 	for in, want := range cases {
 		if got := cleanDomain(in); got != want {

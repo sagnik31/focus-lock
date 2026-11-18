@@ -207,14 +207,21 @@ func CleanDomain(input string) string { return cleanDomain(input) }
 
 func cleanDomain(input string) string {
 	input = strings.TrimSpace(input)
-	if !strings.HasPrefix(input, "http") {
+	if input == "" {
+		return ""
+	}
+	// Add a scheme only when there is none. Checking for a leading "http"
+	// instead dropped real domains that start with it ("httpbin.org" parsed
+	// with an empty host) and mangled upper-case schemes ("HTTPS://X.COM"
+	// became host "HTTPS").
+	if !strings.Contains(input, "://") {
 		input = "http://" + input
 	}
 	u, err := url.Parse(input)
 	if err != nil {
 		return ""
 	}
-	return u.Hostname()
+	return strings.ToLower(u.Hostname())
 }
 
 func getHostsPath() string {
