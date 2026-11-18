@@ -7,6 +7,7 @@ import (
 	"focus-lock/backend/clock"
 	"focus-lock/backend/scheduler"
 	"focus-lock/backend/storage"
+	"focus-lock/backend/sysinfo"
 	"focus-lock/backend/watchdog"
 	"os"
 	"sort"
@@ -21,6 +22,11 @@ type App struct {
 
 	updOnce sync.Once
 	upd     *updateManager // in-app updates (update.go); use a.updates()
+
+	// Last installed-apps scan (apps.go), reused by GetTopBlockedApps.
+	appsMu    sync.Mutex
+	appsCache []sysinfo.AppInfo
+	appsAt    time.Time
 }
 
 // NewApp creates a new App application struct

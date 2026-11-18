@@ -31,11 +31,16 @@ function App() {
                 const serverMs = await GetNow();
                 setNowOffset(serverMs - Date.now());
             } catch { /* GetNow unavailable: fall back to local clock (offset 0) */ }
-            const top = await GetTopBlockedApps();
-            setTopApps(top);
         } catch (e) {
             console.error(e);
         }
+    };
+
+    // Top apps only change when stats do (a session starts or ends), so they
+    // are not part of the 2s poll: resolving them can mean a full installed-
+    // apps scan (registry, folders, PowerShell for icons).
+    const refreshTopApps = () => {
+        GetTopBlockedApps().then(setTopApps).catch(console.error);
     };
 
     const trustedNow = () => new Date(Date.now() + nowOffset);
@@ -48,7 +53,7 @@ function App() {
         GetInstalledApps().then(setInstalledApps).catch(console.error);
 
         // Fetch top apps initially
-        GetTopBlockedApps().then(setTopApps).catch(console.error);
+        refreshTopApps();
 
         // Request notification permission on load
         if (Notification.permission !== "granted") {
@@ -240,6 +245,7 @@ function App() {
             });
 
             refresh();
+            refreshTopApps();
         } catch (err: any) {
             setError("Failed to start: " + err);
         }

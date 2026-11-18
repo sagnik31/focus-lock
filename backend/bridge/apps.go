@@ -6,11 +6,35 @@ import (
 	"focus-lock/backend/sysinfo"
 	"sort"
 	"strings"
+	"time"
 )
 
-// GetInstalledApps returns a list of installed applications
+// installedAppsTTL is how long GetTopBlockedApps may reuse the last scan.
+// A scan walks the registry and app folders and runs PowerShell for icons,
+// so it must not run on every UI poll.
+const installedAppsTTL = 10 * time.Minute
+
+// GetInstalledApps scans the installed applications (always fresh: the app
+// picker's refresh button calls it) and caches the result.
 func (a *App) GetInstalledApps() ([]sysinfo.AppInfo, error) {
-	return sysinfo.GetInstalledApps()
+	apps, err := sysinfo.GetInstalledApps()
+	if err == nil {
+		a.appsMu.Lock()
+		a.appsCache, a.appsAt = apps, time.Now()
+		a.appsMu.Unlock()
+	}
+	return apps, err
+}
+
+// cachedInstalledApps returns the last scan if it is recent, else rescans.
+func (a *App) cachedInstalledApps() ([]sysinfo.AppInfo, error) {
+	a.appsMu.Lock()
+	apps, at := a.appsCache, a.appsAt
+	a.appsMu.Unlock()
+	if apps != nil && time.Since(at) < installedAppsTTL {
+		return apps, nil
+	}
+	return a.GetInstalledApps()
 }
 
 // AddApp adds an app to the blocked list
@@ -66,8 +90,12 @@ func (a *App) GetTopBlockedApps() ([]sysinfo.AppInfo, error) {
 		topApps = append(topApps, ss[i].Key)
 	}
 
+	if len(topApps) == 0 {
+		return []sysinfo.AppInfo{}, nil // nothing to resolve; skip the scan
+	}
+
 	// Resolve AppInfo
-	installed, err := sysinfo.GetInstalledApps()
+	installed, err := a.cachedInstalledApps()
 	if err != nil {
 		return []sysinfo.AppInfo{}, err // Return empty slice on error
 	}
