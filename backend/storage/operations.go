@@ -286,9 +286,10 @@ func applyScheduleUnlockReset(cfg *Config, now time.Time) bool {
 
 func applySaveSchedules(cfg *Config, op Operation, locked bool) error {
 	if locked {
-		// A previously-enabled schedule may not be deleted or disabled while
-		// anything is being enforced; everything else (adding, renaming,
-		// editing times of non-active ones) is fine.
+		// A previously-enabled schedule may not be deleted, disabled or
+		// re-timed (days, start, end) while anything is being enforced:
+		// moving the end of the active window to the past would end it.
+		// Adding schedules, enabling one and renaming are fine.
 		newByID := make(map[string]Schedule, len(op.Schedules))
 		for _, s := range op.Schedules {
 			newByID[s.ID] = s
@@ -303,6 +304,9 @@ func applySaveSchedules(cfg *Config, op Operation, locked bool) error {
 			}
 			if !ns.Enabled {
 				return errors.New("cannot disable active schedules during an active focus session")
+			}
+			if ns.StartTime != old.StartTime || ns.EndTime != old.EndTime || !sameDays(ns.Days, old.Days) {
+				return errors.New("cannot change the days or times of enabled schedules during an active focus session")
 			}
 		}
 	}
@@ -410,6 +414,11 @@ func cleanSiteGroups(in []SiteGroup) ([]SiteGroup, error) {
 		out = append(out, SiteGroup{ID: g.ID, Name: name, Sites: sites})
 	}
 	return out, nil
+}
+
+// sameDays reports whether two day lists hold the same days, in any order.
+func sameDays(a, b []string) bool {
+	return isSuperset(a, b) && isSuperset(b, a)
 }
 
 // --- small slice helpers ---
