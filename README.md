@@ -25,7 +25,10 @@ lift an active block.
 - **Timed focus sessions.** Set a duration, start the session, and blocking stays active
   until it expires.
 - **Scheduled blocking.** Define recurring windows (for example, weekdays 09:00–17:00)
-  that enforce blocking automatically with no manual start required.
+  that enforce blocking automatically with no manual start required. A window can run
+  overnight (for example, 22:00–06:00 starts on each selected day and ends the next
+  morning). While a session or window is active, enabled schedules can't be deleted,
+  disabled, or have their days or times changed; you can still add new ones.
 - **Application blocking.** Block apps by executable name (e.g. `discord.exe`). Blocked
   apps are closed if they are launched during a session.
 - **System-wide website blocking.** Domains are blocked through the Windows `hosts` file,
@@ -49,8 +52,9 @@ lift an active block.
   countdown cannot be shortened by changing the system clock.
 - **Resilient enforcement.** A lightweight background process keeps enforcing the active
   session even when the main window is closed, and persists across restarts.
-- **Limited emergency unlocks.** A small, capped number of short pauses per session, for
-  genuine emergencies, without defeating the point of the lock.
+- **Limited emergency unlocks.** Two one-minute pauses per session, for genuine
+  emergencies, without defeating the point of the lock. Each schedule window counts as
+  one session; starting a timer during a window doesn't add more.
 
 ## Architecture
 
@@ -186,12 +190,17 @@ battery-safe and has no run-time limit, so Windows does not silently interrupt i
 ## Usage
 
 1. **Block applications** — open the **Apps** tab and add executables (for example,
-   `discord.exe`) or pick from the detected list.
+   `discord.exe`) or pick from the detected list. Installed apps whose program file can't be
+   found aren't listed in the picker; add those by their `.exe` name instead.
 2. **Block websites** — open the **Websites** tab and add domains (for example,
    `facebook.com`), or toggle a category preset.
-3. **Start a manual session** — set a duration, click **Start Focus**, and confirm.
-4. **Set up schedules** — open the **Schedules** tab, create a schedule with days and a
-   start and end time, and enable it. Blocking turns on automatically during that window.
+3. **Start a manual session** — set a duration (or a "focus until" date and time), click **Start focus**, and confirm.
+4. **Set up schedules** — switch the timer panel from **Manual** to **Scheduled**, create
+   a schedule with days and a start and end time (**New**), and enable it. Blocking turns
+   on automatically during that window. An end time earlier than the start time makes an
+   overnight window. Imported schedules
+   are checked too: an import with an invalid schedule (for example `25:00` or an unknown
+   day) is refused and names the schedule to fix.
 
 ## Project layout
 

@@ -141,3 +141,27 @@ With an update available (downloaded or not):
 Known gaps (accepted): uninstalling mid-session isn't blocked; the first update from a pre-calendar
 `1.0.0` install isn't gated by the installer (the app-side check still applies); installers older than this
 feature don't refuse mid-session either.
+
+## 6. Gap-audit fixes (2026-11-18)
+
+These fixes are unit-tested where the logic allows, but the UI parts have never been seen
+running. Any installed build from `main` after `1f46f89` (or `wails build`) will do.
+
+- [ ] **App picker (G1).** Apps → open the app picker: no entries with a "?" icon and no name
+      that select together; the footer says how many apps without a program file are hidden.
+      Start a short lock with a normal app blocked: only that app closes, nothing else
+      (e.g. a `.NET` or Node.js tool you have open keeps running).
+- [ ] **Overnight schedule (G4).** Timer panel → **Scheduled** → New, 22:00–06:00 on today: the editor shows the
+      "Overnight" hint and saves; the list shows `22:00 - 06:00 (+1 day)`. It enforces before and
+      after midnight (or set it to cover "now" across midnight to check quickly).
+- [ ] **No PowerShell churn (G5).** Leave the main window open and idle for a minute with Task
+      Manager → Details sorted by name: no `powershell.exe` keeps appearing.
+- [ ] **Lock-screen end time (G15).** With a schedule window active, start a manual lock that
+      ends after the window: the countdown shows the manual lock's end and reads "Focus Mode
+      Active"; no Quit button appears when the window ends.
+- [ ] **Schedule list (G16).** With the **Scheduled** view open, import a settings file that adds a
+      schedule, then toggle another schedule: both are still listed. During a session, a refused
+      change shows a red banner (dismissible) and the list shows what is actually saved.
+- [ ] **Schedules can't be re-timed mid-session (G2/G3).** During a schedule window there is no
+      Edit/Delete/toggle on schedules. Use both emergency unlocks, then start a 1-minute focus from
+      Settings: the unlock button stays at the limit.
