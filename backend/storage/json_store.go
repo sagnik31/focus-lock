@@ -270,6 +270,32 @@ func (s *Store) UpdateAtomic(updater func(*Config)) error {
 	return s.saveInternal()
 }
 
+// Snapshot returns a copy of the in-memory config taken under the store lock,
+// with its top-level slices copied, so a caller can read or sort it while the
+// enforcer reloads Data concurrently.
+func (s *Store) Snapshot() Config {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c := s.Data
+	c.BlockedApps = cloneSlice(s.Data.BlockedApps)
+	c.BlockedSites = cloneSlice(s.Data.BlockedSites)
+	c.Schedules = cloneSlice(s.Data.Schedules)
+	c.RecentSites = cloneSlice(s.Data.RecentSites)
+	c.SiteGroups = cloneSlice(s.Data.SiteGroups)
+	return c
+}
+
+// cloneSlice copies src, keeping nil as nil and empty as empty (so the JSON
+// the UI reads stays "null" vs "[]" exactly as before).
+func cloneSlice[T any](src []T) []T {
+	if src == nil {
+		return nil
+	}
+	out := make([]T, len(src))
+	copy(out, src)
+	return out
+}
+
 func (s *Store) Save() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -330,6 +356,11 @@ func (s *Store) saveInternal() error {
 
 	// 3. Registry backup of lock timing (survives even if the files are deleted,
 	//    so the lock itself can't be escaped by removing config.json).
+	//    NewStore always sets regStore; it is nil only in unit tests, which
+	//    must not write the real registry.
+	if s.regStore == nil {
+		return nil
+	}
 	return s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration, s.Data.PausedUntil)
 }
 

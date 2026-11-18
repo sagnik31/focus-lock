@@ -124,8 +124,9 @@ func (a *App) Startup(ctx context.Context) {
 // GetConfig returns the current configuration
 func (a *App) GetConfig() storage.Config {
 	a.Store.Load()
-	sort.Strings(a.Store.Data.BlockedApps)
-	return a.Store.Data
+	cfg := a.Store.Snapshot()
+	sort.Strings(cfg.BlockedApps)
+	return cfg
 }
 
 // GetNow returns the enforcer's trusted time as Unix milliseconds. The frontend
@@ -197,11 +198,10 @@ func (a *App) GetInsights() (string, error) {
 // request can never weaken an active lock.
 func (a *App) applyOp(op storage.Operation) error {
 	if a.Store.CanSign() {
-		a.Store.Load()
-		if err := storage.ApplyOperation(&a.Store.Data, op, clock.Default.Now()); err != nil {
-			return err
-		}
-		return a.Store.Save()
+		// ApplyRequest reloads, runs the policy and saves under the store
+		// lock. A separate Load / mutate / Save here raced the in-process
+		// enforcer's own read-modify-writes and could lose the change.
+		return a.Store.ApplyRequest(op, clock.Default.Now())
 	}
 	return a.Store.SubmitRequest(op, 3*time.Second)
 }
