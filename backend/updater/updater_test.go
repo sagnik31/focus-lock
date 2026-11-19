@@ -2,7 +2,9 @@ package updater
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -36,11 +38,20 @@ type fakeGitHub struct {
 	mu        sync.Mutex
 	hits      map[string]int
 	userAgent string
+	key       ed25519.PrivateKey // signs sums for SHA256SUMS.txt.sig
+	badSig    bool               // serve a signature of different data
 }
+
+// testKey is the release key the fake signs with; fakeGitHub.client trusts it.
+var testPub, testKey = func() (ed25519.PublicKey, ed25519.PrivateKey) {
+	seed := sha256.Sum256([]byte("focus-lock test release key"))
+	k := ed25519.NewKeyFromSeed(seed[:])
+	return k.Public().(ed25519.PublicKey), k
+}()
 
 func newFake(t *testing.T) *fakeGitHub {
 	t.Helper()
-	f := &fakeGitHub{setup: setupBytes, hits: map[string]int{}}
+	f := &fakeGitHub{setup: setupBytes, hits: map[string]int{}, key: testKey}
 	f.srv = httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	name := SetupAssetName(testVer)
@@ -54,9 +65,21 @@ func newFake(t *testing.T) *fakeGitHub {
 			{"name": name, "browser_download_url": f.srv.URL + "/dl/" + name, "size": len(setupBytes)},
 			{"name": "FocusLock-Setup.exe", "browser_download_url": f.srv.URL + "/dl/FocusLock-Setup.exe", "size": len(setupBytes)},
 			{"name": ChecksumsAsset, "browser_download_url": f.srv.URL + "/dl/" + ChecksumsAsset, "size": 10},
+			{"name": SignatureAsset, "browser_download_url": f.srv.URL + "/dl/" + SignatureAsset, "size": 10},
 		},
 	}
 	return f
+}
+
+// dropSignatureAsset removes SHA256SUMS.txt.sig from the release.
+func (f *fakeGitHub) dropSignatureAsset() {
+	var kept []map[string]any
+	for _, a := range f.release["assets"].([]map[string]any) {
+		if a["name"] != SignatureAsset {
+			kept = append(kept, a)
+		}
+	}
+	f.release["assets"] = kept
 }
 
 func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
@@ -78,6 +101,12 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(f.release)
 	case r.URL.Path == "/dl/"+ChecksumsAsset:
 		_, _ = w.Write([]byte(f.sums))
+	case r.URL.Path == "/dl/"+SignatureAsset:
+		signed := []byte(f.sums)
+		if f.badSig {
+			signed = append(signed, "tampered"...)
+		}
+		_, _ = w.Write([]byte(base64.StdEncoding.EncodeToString(ed25519.Sign(f.key, signed)) + "\n"))
 	case strings.HasPrefix(r.URL.Path, "/dl/FocusLock-Setup"):
 		_, _ = w.Write(f.setup)
 	default:
@@ -96,6 +125,7 @@ func (f *fakeGitHub) client(t *testing.T) *Client {
 	c.HTTP = f.srv.Client()
 	c.HTTP.Timeout = 5 * time.Second
 	c.APIURL = f.srv.URL + "/latest"
+	c.PublicKey = testPub
 	return c
 }
 
@@ -310,5 +340,50 @@ func TestLastCheck(t *testing.T) {
 	}
 	if !CheckDue(got, true, now.Add(-time.Hour)) {
 		t.Fatal("future record should be due")
+	}
+}
+
+func TestDownloadRefusesBadSignature(t *testing.T) {
+	cases := map[string]func(f *fakeGitHub, c *Client){
+		"signed data differs": func(f *fakeGitHub, c *Client) { f.badSig = true },
+		"wrong key":           func(f *fakeGitHub, c *Client) { _, k, _ := ed25519.GenerateKey(nil); f.key = k },
+		"no signature asset":  func(f *fakeGitHub, c *Client) { f.dropSignatureAsset() },
+		"no key in the app":   func(f *fakeGitHub, c *Client) { c.PublicKey = nil },
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			f := newFake(t)
+			c := f.client(t)
+			setup(f, c)
+			rel, err := c.Latest(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := c.Download(context.Background(), rel, nil); !errors.Is(err, ErrBadSignature) {
+				t.Fatalf("want ErrBadSignature, got %v", err)
+			}
+			if f.hitCount("/dl/"+SetupAssetName(testVer)) != 0 {
+				t.Fatal("installer fetched although the checksums are not signed")
+			}
+		})
+	}
+}
+
+func TestVerifySignature(t *testing.T) {
+	data := []byte("abc  FocusLock-Setup.exe\n")
+	sig := []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(testKey, data)) + "\r\n")
+	if err := VerifySignature(data, sig, testPub); err != nil {
+		t.Fatalf("valid signature rejected: %v", err)
+	}
+	for name, s := range map[string][]byte{"empty": nil, "not base64": []byte("!!"), "short": []byte("AAAA")} {
+		if err := VerifySignature(data, s, testPub); !errors.Is(err, ErrBadSignature) {
+			t.Errorf("%s: want ErrBadSignature, got %v", name, err)
+		}
+	}
+}
+
+func TestEmbeddedReleaseKeyIsValid(t *testing.T) {
+	if len(ReleasePublicKey()) != ed25519.PublicKeySize {
+		t.Fatal("releasePublicKeyB64 is not a valid Ed25519 public key")
 	}
 }

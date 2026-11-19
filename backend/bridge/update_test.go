@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"focus-lock/backend/storage"
+	"focus-lock/backend/updater"
 )
 
 func TestInstallAllowed(t *testing.T) {
@@ -133,5 +135,118 @@ func TestUpdateActionsNeedPriorSteps(t *testing.T) {
 	}
 	if st := decodeState(t, a.GetUpdateState()); !st.Dev || st.Current == "" {
 		t.Fatalf("state: %+v", st)
+	}
+}
+
+// readyApp returns an App with a verified download ready to install.
+func readyApp(t *testing.T) (*App, *updateManager) {
+	t.Helper()
+	a := newTestApp(t)
+	setup := filepath.Join(t.TempDir(), "FocusLock-Setup-2026.11.17.0.exe")
+	if err := os.WriteFile(setup, []byte("setup"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sum, _ := updater.FileSHA256(setup)
+	m := a.updates()
+	m.state.Dev = false
+	m.state.Available = true
+	m.state.Downloaded = true
+	m.state.Phase = phaseReady
+	m.setupPath, m.setupSHA = setup, sum
+	return a, m
+}
+
+// stubInstall replaces the task and UAC launch seams for one test.
+func stubInstall(t *testing.T, taskErr error, status func() (updater.TaskStatus, error)) *[]string {
+	t.Helper()
+	var launched []string
+	prevRun, prevStatus, prevLaunch, prevPoll := runUpdaterTask, updaterTaskStatus, launchSetup, taskPollInterval
+	runUpdaterTask = func() error { return taskErr }
+	updaterTaskStatus = status
+	launchSetup = func(p string) error { launched = append(launched, p); return nil }
+	taskPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		runUpdaterTask, updaterTaskStatus, launchSetup, taskPollInterval = prevRun, prevStatus, prevLaunch, prevPoll
+	})
+	return &launched
+}
+
+func waitPhase(t *testing.T, a *App, m *updateManager, want string) updateState {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		st := decodeState(t, a.updateJSON(m))
+		busy := m.busy
+		m.mu.Unlock()
+		if st.Phase == want && !busy {
+			return st
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("phase never became %s", want)
+	return updateState{}
+}
+
+func TestInstallUpdateUsesUpdaterTask(t *testing.T) {
+	a, m := readyApp(t)
+	launched := stubInstall(t, nil, func() (updater.TaskStatus, error) {
+		return updater.TaskStatus{LastResult: updater.ApplyStarted, LastRun: time.Now()}, nil
+	})
+	st := decodeState(t, a.InstallUpdate())
+	if st.Phase != phaseInstalling || st.Error != "" {
+		t.Fatalf("state: %+v", st)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if len(*launched) != 0 {
+		t.Fatal("UAC launch used although the updater task ran")
+	}
+	m.mu.Lock()
+	busy := m.busy
+	m.mu.Unlock()
+	if !busy {
+		t.Fatal("a successful task run must keep the manager busy until the app quits")
+	}
+}
+
+func TestInstallUpdateReportsTaskRefusal(t *testing.T) {
+	a, m := readyApp(t)
+	calls := 0
+	stubInstall(t, nil, func() (updater.TaskStatus, error) {
+		calls++
+		if calls < 3 {
+			return updater.TaskStatus{Running: true}, nil
+		}
+		return updater.TaskStatus{LastResult: updater.ApplyVerifyFailed, LastRun: time.Now()}, nil
+	})
+	a.InstallUpdate()
+	st := waitPhase(t, a, m, phaseReady)
+	if st.Error != updater.ApplyExitMessage(updater.ApplyVerifyFailed) || !st.Downloaded {
+		t.Fatalf("state: %+v", st)
+	}
+}
+
+func TestInstallUpdateIgnoresEarlierTaskRun(t *testing.T) {
+	a, m := readyApp(t)
+	prevTimeout := taskStartTimeout
+	taskStartTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { taskStartTimeout = prevTimeout })
+	stubInstall(t, nil, func() (updater.TaskStatus, error) {
+		// A result from an hour ago must not be taken for this run's.
+		return updater.TaskStatus{LastResult: updater.ApplyStarted, LastRun: time.Now().Add(-time.Hour)}, nil
+	})
+	a.InstallUpdate()
+	st := waitPhase(t, a, m, phaseReady)
+	if !strings.Contains(st.Error, "did not start") {
+		t.Fatalf("state: %+v", st)
+	}
+}
+
+func TestInstallUpdateFallsBackToUAC(t *testing.T) {
+	a, m := readyApp(t)
+	launched := stubInstall(t, errors.New("task not found"), nil)
+	st := decodeState(t, a.InstallUpdate())
+	if st.Phase != phaseInstalling || len(*launched) != 1 || (*launched)[0] != m.setupPath {
+		t.Fatalf("state %+v, launched %v", st, *launched)
 	}
 }

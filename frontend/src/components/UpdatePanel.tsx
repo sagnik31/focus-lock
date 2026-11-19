@@ -101,7 +101,7 @@ export function UpdatePanel({ state, onState, isLocked, onClose }: UpdatePanelPr
 
                     {phase === 'installing' && (
                         <p className="text-slate-300">
-                            Starting the installer… approve the Windows prompt. Focus Lock will close and reopen on the new version.
+                            Installing the update… Focus Lock will close and reopen on the new version. If Windows asks for permission, approve it.
                         </p>
                     )}
 

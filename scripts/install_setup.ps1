@@ -23,6 +23,8 @@
 #      only ACL: the enforcer keeps an admin-only copy of the signed config
 #      there, so deleting or replacing the files in %APPDATA% can't change an
 #      active session (backend/storage/securebackup_windows.go).
+#   4c. Register the on-demand "FocusLock Updater" task, which installs in-app
+#      updates without a UAC prompt (best-effort; see docs/adr/0009).
 #   5. Start the enforcer now through the task, so no reboot is needed.
 #
 # Strong mode assumes the account is a local administrator (so HighestAvailable
@@ -74,6 +76,7 @@ if (-not (Test-Admin)) {
 }
 
 $taskName = 'FocusLock Enforcer'
+$updaterTaskName = 'FocusLock Updater'    # no-prompt in-app updates (ADR 0009; backend/updater/apply.go)
 $legacyTaskName = 'FocusLockGhost'        # pre-rename task from older builds
 $launcherTaskName = 'FocusLockLauncher'   # legacy UAC-bypass launcher from older builds
 $flDir = Join-Path $AppData 'FocusLock'
@@ -180,7 +183,7 @@ try {
         # earlier one fails, so one problem can't leave the rest behind.
         Write-Host "[setup] Removing Focus Lock enforcement..." -ForegroundColor Cyan
         # Tasks first, so nothing relaunches the enforcer while we stop it.
-        foreach ($t in @($taskName, $legacyTaskName, $launcherTaskName)) {
+        foreach ($t in @($taskName, $updaterTaskName, $legacyTaskName, $launcherTaskName)) {
             try { Remove-TaskIfPresent $t } catch { Write-Warning "Could not remove task '$t': $($_.Exception.Message)" }
         }
         try { Stop-FocusLock } catch { Write-Warning "Could not stop Focus Lock: $($_.Exception.Message)" }
@@ -334,6 +337,61 @@ try {
     }
     Set-Acl -Path $secureDir -AclObject $dirAcl
     Write-Host "[setup] Secured $secureDir (SYSTEM + Administrators only)." -ForegroundColor Green
+
+    # 4c. The on-demand updater task (ADR 0009): no trigger, highest run level,
+    #     runs the installed exe with --apply-update, which fetches, verifies
+    #     (signed checksums, newer version only) and installs the latest
+    #     release without a UAC prompt. Its security descriptor lets the
+    #     signed-in user read and run it but only SYSTEM/Administrators change
+    #     it, so a non-elevated process can't point it at another program.
+    #     Only defined here (never by the app; dev builds don't update).
+    #     Best-effort: without it, in-app updates show one UAC prompt instead.
+    $updXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Installs Focus Lock updates when you click Install and restart in the app.</Description>
+    <SecurityDescriptor>D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;FRFX;;;$sidXml)</SecurityDescriptor>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>$sidXml</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <ExecutionTimeLimit>PT30M</ExecutionTimeLimit>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>"$cmdXml"</Command>
+      <Arguments>--apply-update</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+"@
+    $updTmp = Join-Path $env:TEMP 'focuslock-updater-task.xml'
+    [System.IO.File]::WriteAllText($updTmp, $updXml, [System.Text.Encoding]::Unicode)
+    try {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        $out = & schtasks /create /tn $updaterTaskName /xml $updTmp /f 2>&1
+        $rc = $LASTEXITCODE
+        $ErrorActionPreference = $prevEap
+        if ($rc -eq 0) {
+            Write-Host "[setup] Registered '$updaterTaskName' -> `"$ExePath`" --apply-update (updates without a UAC prompt)." -ForegroundColor Green
+        } else {
+            Write-Warning "Could not register '$updaterTaskName' (exit ${rc}: $($out -join ' ')). In-app updates will ask for administrator approval instead."
+        }
+    } finally {
+        Remove-Item $updTmp -Force -ErrorAction SilentlyContinue
+    }
 
     # 5. Start the enforcer now (the logon trigger otherwise only fires at the
     #    next sign-in). Best-effort: it also starts at the next logon.

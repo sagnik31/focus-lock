@@ -71,9 +71,15 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 ; Offer to launch the app after install - non-elevated, as the signed-in user,
 ; so the UI runs at medium integrity as in normal use.
 Filename: "{app}\{#AppExe}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runasoriginaluser
-; In-app updates run Setup silently with /UPDATE=1 after the app has quit;
-; relaunch it (as the signed-in user) once the update is in place.
-Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsUpdate
+; In-app updates run Setup silently; relaunch the app (non-elevated, as the
+; signed-in user) once the update is in place.
+; /UPDATE=1: the app launched Setup with a UAC prompt, so the unelevated
+; original Setup instance can start it (runasoriginaluser).
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsPromptedUpdate
+; /UPDATE=2: the "FocusLock Updater" task started Setup already elevated, so
+; there is no unelevated instance; hand the launch to the user's running
+; shell (explorer.exe passes it to the existing, non-elevated Explorer).
+Filename: "{win}\explorer.exe"; Parameters: """{app}\{#AppExe}"""; Flags: nowait; Check: IsTaskUpdate
 
 [UninstallRun]
 ; Tear down enforcement (tasks, running enforcer/app, hosts-file block, HKLM +
@@ -99,10 +105,16 @@ begin
     Result := -1;
 end;
 
-// True when Setup was started by the app's in-app updater (/UPDATE=1).
-function IsUpdate(): Boolean;
+// True when the app started Setup with a UAC prompt (/UPDATE=1).
+function IsPromptedUpdate(): Boolean;
 begin
   Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
+
+// True when the "FocusLock Updater" task started Setup (/UPDATE=2, no prompt).
+function IsTaskUpdate(): Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '2';
 end;
 
 // DisplayVersion of the currently installed copy, or '' if not installed.
@@ -140,6 +152,8 @@ end;
 // (This also stops an enforcer running from an older dev/staged location.)
 // install_setup.ps1 re-registers the task enabled; DeinitializeSetup re-enables
 // it if Setup is cancelled or the setup step fails.
+// Never end the "FocusLock Updater" task here: on a silent update Setup itself
+// may be running under it.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   RC: Integer;

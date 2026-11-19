@@ -16,7 +16,8 @@ design notes. Their dates are when the decision landed.
 | [0005](0005-signed-config-enforcer-as-sole-signer.md) | Sign the config and make the elevated enforcer the only signer | Accepted |
 | [0006](0006-strengthen-only-operation-policy.md) | Route every change through one pure policy that only allows strengthening during a session | Accepted |
 | [0007](0007-trusted-time-ntp-monotonic.md) | Measure sessions with NTP-anchored monotonic time | Accepted |
-| [0008](0008-weekly-releases-installer-as-updater.md) | Ship weekly calendar-versioned releases and update through the installer | Accepted |
+| [0008](0008-weekly-releases-installer-as-updater.md) | Ship weekly calendar-versioned releases and update through the installer | Accepted; prompt-per-update superseded by 0009 |
+| [0009](0009-silent-updates-via-updater-task.md) | Install updates without a UAC prompt through an updater task, and sign releases | Accepted |
 
 ## Adding a record
 

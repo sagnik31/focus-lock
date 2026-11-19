@@ -96,6 +96,8 @@ releases; a second run on the same UTC day gets `.1`).
       the header button turns into **Update available** with a dot, and the panel shows the new version and notes.
 - [ ] **Download** shows progress, then "Downloaded and verified". The file is in `%APPDATA%\FocusLock\update\`.
 - [ ] **Install and restart** → exactly one UAC prompt → the app closes, then reopens by itself on the new version.
+      (This is the fallback path, for installs without the `FocusLock Updater` task. With the task there is no
+      prompt; see §5.8.)
 - [ ] Afterwards: blocked apps/sites, schedules, groups, Insights history intact; strong mode still on (§2 checks);
       `FocusLock Enforcer` task running from Program Files.
 - [ ] Older downloaded setups are gone from `%APPDATA%\FocusLock\update\`.
@@ -137,6 +139,33 @@ With an update available (downloaded or not):
 - [ ] A scheduled (Sunday) run with no commits since the last release tag succeeds and logs
       "No commits since … skipping", and no new release appears. (Or wait for a quiet week and check the Actions log.)
 - [ ] If the repo had no activity for 60 days, GitHub disables the schedule: re-enable it in Actions.
+
+### 5.8 Updates without a UAC prompt (ADR 0009)
+
+Needs the `RELEASE_SIGNING_KEY` repository secret. Start from an install of a release that has this
+feature (the update *onto* that release still prompts once, through §5.3).
+
+- [ ] The release has a 4th asset, `SHA256SUMS.txt.sig`. A workflow run without the secret fails at
+      **Sign checksums** and publishes nothing.
+- [ ] After installing, the updater task exists and runs the installed exe (in an admin PowerShell):
+      `Get-ScheduledTask 'FocusLock Updater' | % { $_.Actions.Execute, $_.Actions.Arguments, $_.Principal.RunLevel }`
+      → `"C:\Program Files\Focus Lock\focus-lock.exe"`, `--apply-update`, `Highest`. `%TEMP%\FocusLock-setup.log`
+      shows "Registered 'FocusLock Updater'" and no warning about it.
+- [ ] From a normal (non-elevated) PowerShell: `schtasks /change /tn "FocusLock Updater" /disable` → access denied
+      (only admins can change it). Don't run it from an admin prompt.
+- [ ] Publish a newer release. **Check for updates** → **Download** → **Install and restart** → **no UAC prompt**;
+      the app closes and reopens by itself on the new version within about a minute.
+- [ ] The reopened app is **not** elevated: Task Manager → Details → right-click a column → Select columns →
+      **Elevated** → the `focus-lock.exe` UI row says **No** (the enforcer row says Yes).
+- [ ] Afterwards: settings, schedules and history intact; both tasks present; `%ProgramData%\FocusLock\update\`
+      holds the new setup and `apply.log` ("started …"), readable only from an admin prompt.
+- [ ] **During a session**: start a lock, then run the task by hand: `schtasks /run /tn "FocusLock Updater"`, and after
+      a few seconds `(Get-ScheduledTask 'FocusLock Updater' | Get-ScheduledTaskInfo).LastTaskResult` → `3`; nothing
+      installs. (The app's button is greyed out anyway.)
+- [ ] **Already up to date**: on the latest version, `schtasks /run /tn "FocusLock Updater"` → last result `20`; nothing
+      installs.
+- [ ] **Fallback**: in an admin PowerShell, `Disable-ScheduledTask 'FocusLock Updater'`, then **Install and restart**
+      with an update available → one UAC prompt, as in §5.3. Re-enable it afterwards with `Enable-ScheduledTask`.
 
 Known gaps (accepted): uninstalling mid-session isn't blocked; the first update from a pre-calendar
 `1.0.0` install isn't gated by the installer (the app-side check still applies); installers older than this

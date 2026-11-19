@@ -1,8 +1,11 @@
 // Package updater checks GitHub Releases for a newer Focus Lock, downloads the
-// release's installer and verifies it against the published SHA-256 checksum.
+// release's installer and verifies it against the published SHA-256 checksum,
+// whose list is signed with the release key (signature.go).
 //
 // The existing installer is the updater: once downloaded and verified, Setup
-// is launched elevated with /UPDATE=1 (see Launch) and does the usual stop
+// is started elevated, either by the "FocusLock Updater" task without a UAC
+// prompt (apply.go) or, without that task, with one prompt (Launch), and does
+// the usual stop
 // enforcer -> replace exe -> re-register task -> relaunch. Nothing here
 // replaces the running exe itself.
 //
@@ -15,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -188,17 +192,19 @@ func VerifyFile(path, wantSHA256 string) error {
 
 // Client talks to GitHub and manages the download folder.
 type Client struct {
-	HTTP   *http.Client
-	APIURL string // the "latest release" endpoint
-	Dir    string // download + bookkeeping folder (%APPDATA%\FocusLock\update)
+	HTTP      *http.Client
+	APIURL    string            // the "latest release" endpoint
+	Dir       string            // download + bookkeeping folder
+	PublicKey ed25519.PublicKey // release signing key (SHA256SUMS.txt.sig)
 }
 
 // New returns a Client for the real GitHub endpoint storing files in dir.
 func New(dir string) *Client {
 	return &Client{
-		HTTP:   &http.Client{Timeout: 10 * time.Second},
-		APIURL: LatestReleaseURL,
-		Dir:    dir,
+		HTTP:      &http.Client{Timeout: 10 * time.Second},
+		APIURL:    LatestReleaseURL,
+		Dir:       dir,
+		PublicKey: ReleasePublicKey(),
 	}
 }
 
@@ -258,8 +264,10 @@ func (c *Client) Latest(ctx context.Context) (*Release, error) {
 	return ParseRelease(data)
 }
 
-// ExpectedSHA256 downloads the release's SHA256SUMS.txt and returns the
-// checksum of its versioned installer.
+// ExpectedSHA256 downloads the release's SHA256SUMS.txt and its signature,
+// checks the signature against the release key built into the app, and
+// returns the checksum of the versioned installer. An unsigned or wrongly
+// signed release is refused (ErrBadSignature).
 func (c *Client) ExpectedSHA256(ctx context.Context, rel *Release) (string, error) {
 	setup, err := rel.SetupAsset()
 	if err != nil {
@@ -269,16 +277,36 @@ func (c *Client) ExpectedSHA256(ctx context.Context, rel *Release) (string, erro
 	if err != nil {
 		return "", err
 	}
-	resp, err := c.get(ctx, sums.DownloadURL, c.HTTP)
+	sigAsset, err := rel.Asset(SignatureAsset)
+	if err != nil {
+		return "", ErrBadSignature
+	}
+	data, err := c.fetchSmall(ctx, sums.DownloadURL, ChecksumsAsset)
 	if err != nil {
 		return "", err
+	}
+	sig, err := c.fetchSmall(ctx, sigAsset.DownloadURL, SignatureAsset)
+	if err != nil {
+		return "", err
+	}
+	if err := VerifySignature(data, sig, c.PublicKey); err != nil {
+		return "", err
+	}
+	return ParseChecksums(data, setup.Name)
+}
+
+// fetchSmall downloads a small release asset (checksums, signature).
+func (c *Client) fetchSmall(ctx context.Context, rawURL, name string) ([]byte, error) {
+	resp, err := c.get(ctx, rawURL, c.HTTP)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxChecksums))
 	if err != nil {
-		return "", fmt.Errorf("downloading %s failed: %w", ChecksumsAsset, err)
+		return nil, fmt.Errorf("downloading %s failed: %w", name, err)
 	}
-	return ParseChecksums(data, setup.Name)
+	return data, nil
 }
 
 // Progress receives download progress; total is <= 0 when unknown.

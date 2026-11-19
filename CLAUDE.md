@@ -68,9 +68,18 @@ cd frontend && npx tsc --noEmit
 - **Never reintroduce `RtlSetProcessIsCritical`** or terminate-denying DACLs on the
   enforcer. They caused blue screens. Recovery from a kill is the scheduled task's
   one-minute repetition.
-- **The task XML is defined in three places that must stay identical:**
+- **The enforcer task XML is defined in three places that must stay identical:**
   `backend/scheduler/service.go`, `scripts/install_setup.ps1` and
-  `scripts/setup_persistence.ps1`.
+  `scripts/setup_persistence.ps1`. The `FocusLock Updater` task (ADR 0009) is defined only
+  in `scripts/install_setup.ps1`; the app never registers it. Setup must never end it,
+  because a silent update runs Setup under it.
+- **`--apply-update` runs elevated, so it must not trust anything the user can write.**
+  It takes no arguments, fetches and verifies the release itself, and runs Setup only from
+  the admin-only `%ProgramData%\FocusLock\update`.
+- **Releases must be signed.** The workflow signs `SHA256SUMS.txt` with the
+  `RELEASE_SIGNING_KEY` secret, and the app refuses unsigned releases. If you rotate the key,
+  change `releasePublicKeyB64` in `backend/updater/signature.go` in the same release
+  (`go run ./cmd/signsums -genkey -out <file outside the repo>`).
 - **Keep the `*_other.go` `!windows` stubs** so `go build ./...` works on other platforms.
   `watchdog` builds only on Windows.
 - **Spawned console tools** (`schtasks`, PowerShell) should use the `CREATE_NO_WINDOW`

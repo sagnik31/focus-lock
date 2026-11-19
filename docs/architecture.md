@@ -12,13 +12,14 @@ deletes the scheduled task, boots into Safe Mode or spoofs NTP on their network.
 
 ## Processes
 
-The same executable, `focus-lock.exe`, runs in three modes chosen in `main.go`:
+The same executable, `focus-lock.exe`, runs in four modes chosen in `main.go`:
 
 | Mode | Started by | Job |
 | --- | --- | --- |
 | UI (no flag) | The user | The Wails window. Edits block lists and schedules, starts sessions, shows insights and updates. Single instance (`Global\FocusLockMutex`). |
 | Enforcer (`--enforce`) | The `FocusLock Enforcer` scheduled task | Headless. Runs the enforcement loop and, in strong mode, is the only process that can sign the config. Single instance (`Global\FocusLockGhost`). The code calls it the "Ghost". |
 | `--session-active` | The installer | Exits 3 if a session is active, so Setup can refuse to update mid-session. |
+| `--apply-update` | The `FocusLock Updater` scheduled task (started by the UI) | Elevated. Fetches, verifies and silently installs the newest signed release (see Updates). |
 
 The scheduled task runs at logon with highest privileges, repeats every minute, and ignores
 new instances while one is running. A killed enforcer therefore comes back within a minute
@@ -100,16 +101,32 @@ is active. Each window instance counts as one session for the emergency-unlock q
 ## Updates
 
 A GitHub Actions workflow (`.github/workflows/release.yml`) publishes a calendar-versioned
-release (`YYYY.M.D.N`) every Sunday when `main` has changed. The app checks the GitHub
-Releases API, downloads the installer and verifies its SHA-256, then runs it with one UAC
-prompt. Installing is refused during a session by the app and the installer.
-`backend/version.Version` is stamped at build time. Local builds report `dev` and never
-update.
+release (`YYYY.M.D.N`) every Sunday when `main` has changed. It signs `SHA256SUMS.txt`
+with the release key (`cmd/signsums`, secret `RELEASE_SIGNING_KEY`). The app checks the
+GitHub Releases API, then downloads the installer and verifies it against the signed
+checksums. The public key is in `backend/updater/signature.go`, and an unsigned release is
+refused.
+
+**Install and restart** starts the on-demand `FocusLock Updater` task (registered by the
+installer), which runs `focus-lock.exe --apply-update` elevated without a UAC prompt. That
+mode fetches the latest release again itself and refuses anything not newer than the
+installed version. It verifies the installer in the admin-only
+`%ProgramData%\FocusLock\update`, checks for a session, and starts Setup with `/UPDATE=2`.
+Setup then relaunches the app non-elevated through `explorer.exe`. The UI polls the task
+and shows its exit code (`updater.ApplyExitMessage`) if it refuses. Without the task
+(reduced mode, older installs) the app runs the installer with one UAC prompt. See
+[ADR 0009](adr/0009-silent-updates-via-updater-task.md).
+
+Installing is refused during a session by the app, by `--apply-update` and by the
+installer. `backend/version.Version` is stamped at build time. Local builds report `dev`
+and never update.
 
 ## Code map
 
 ```
-main.go, session_active.go   Entry point and the three runtime modes
+main.go, session_active.go,  Entry point and the four runtime modes
+apply_update.go
+cmd/signsums/                Signs SHA256SUMS.txt in the release workflow; generates keys
 backend/bridge/              Wails-bound API used by the UI (App struct)
 backend/watchdog/            Enforcement loop and Win32 process plumbing
 backend/storage/             Config, signing, the operation policy, schedules, stats, request channel
@@ -117,7 +134,7 @@ backend/blocking/hosts/      hosts-file blocking
 backend/blocking/browserpolicy/  Chrome URLBlocklist policy
 backend/clock/, backend/ntp/ Trusted time
 backend/scheduler/           Creates and queries the enforcer's scheduled task
-backend/updater/, backend/version/  Release check, download, verify, launch
+backend/updater/, backend/version/  Release check, download, signature + checksum verify, updater task, launch
 backend/sysinfo/             Installed apps and icons
 backend/protection/          VPN block list
 backend/logging/             Size-capped log files

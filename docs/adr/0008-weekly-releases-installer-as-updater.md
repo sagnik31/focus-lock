@@ -1,6 +1,6 @@
 # 0008. Ship weekly calendar-versioned releases and update through the installer
 
-- **Status:** Accepted
+- **Status:** Accepted; "one UAC prompt per update" superseded by [0009](0009-silent-updates-via-updater-task.md)
 - **Date:** 2026-11-17
 
 ## Context

@@ -113,6 +113,17 @@ jobs:
         if: steps.check.outputs.release == 'true'
         run: ./scripts/build_installer.ps1 -Version '${{ steps.version.outputs.version }}'
 
+      # Signs SHA256SUMS.txt with the release key (ADR 0009). The app refuses
+      # an unsigned release, so a missing or wrong secret fails the run here
+      # instead of publishing a release nobody can update to.
+      - name: Sign checksums
+        if: steps.check.outputs.release == 'true'
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          go run ./cmd/signsums -sign installer/Output/SHA256SUMS.txt
+          if ($LASTEXITCODE -ne 0) { throw "signing SHA256SUMS.txt failed" }
+
       - name: Publish GitHub Release
         if: steps.check.outputs.release == 'true'
         env:
@@ -120,7 +131,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           $out = 'installer/Output'
-          $assets = @("$out/FocusLock-Setup-$env:VERSION.exe", "$out/FocusLock-Setup.exe", "$out/SHA256SUMS.txt")
+          $assets = @("$out/FocusLock-Setup-$env:VERSION.exe", "$out/FocusLock-Setup.exe", "$out/SHA256SUMS.txt", "$out/SHA256SUMS.txt.sig")
           foreach ($a in $assets) { if (-not (Test-Path $a)) { throw "Missing asset: $a" } }
           Get-Content "$out/SHA256SUMS.txt"
           gh release create "v$env:VERSION" --target $env:GITHUB_SHA --title "Focus Lock $env:VERSION" --generate-notes @assets

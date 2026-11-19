@@ -4,7 +4,8 @@
 
 Get `FocusLock-Setup.exe` from
 **[Releases → latest](https://github.com/sagnik31/focus-lock/releases/latest)**. Each release
-also publishes `SHA256SUMS.txt`. The installer isn't code-signed, so Windows SmartScreen
+also publishes `SHA256SUMS.txt` and its signature, `SHA256SUMS.txt.sig`. The installer
+isn't code-signed with a certificate, so Windows SmartScreen
 warns the first time you run a copy downloaded in a browser (**More info → Run anyway**).
 In-app updates don't trigger that warning.
 
@@ -15,6 +16,8 @@ Run the installer and approve the single UAC prompt. It does the one-time elevat
 - adds Defender exclusions,
 - registers the `FocusLock Enforcer` scheduled task, which runs the installed exe with
   `--enforce` at logon and relaunches it every minute,
+- registers the on-demand `FocusLock Updater` task, which installs in-app updates without
+  another UAC prompt,
 - stores the tamper-protection secret in `HKLM` and creates the admin-only
   `%ProgramData%\FocusLock` folder.
 
@@ -33,9 +36,12 @@ Install once. After that the app updates itself.
   the tests and typecheck, and publishes a release. Weeks with no changes are skipped.
   Versions are calendar versions `YYYY.M.D.N` (tag `vYYYY.M.D.N`).
 - **In the app.** Click **Updates** in the header. The app also checks quietly on start, at
-  most once a day. **Download** fetches the new installer and verifies its SHA-256 checksum.
-  **Install and restart** runs it with one UAC prompt, and Focus Lock reopens on the new
-  version with your settings, history and schedules intact.
+  most once a day. **Download** fetches the new installer and verifies it against the
+  release's signed checksums, refusing a release that isn't signed with the Focus Lock
+  release key. **Install and restart** installs it without a UAC prompt, through the
+  `FocusLock Updater` task. Focus Lock closes and reopens on the new version with your
+  settings, history and schedules intact. Without that task (reduced mode, or an install
+  older than 2026-11-20) it asks for administrator approval once per update instead.
 - **Not during a session.** You can check and download at any time, but installing is refused
   while a timer lock or a schedule window is active.
 - **By hand.** Running a newer `FocusLock-Setup-<version>.exe` over the existing install does
@@ -44,7 +50,7 @@ Install once. After that the app updates itself.
 ## Uninstall
 
 Uninstall from **Settings → Apps**. It stops the enforcer and the app and removes the
-scheduled task, any active `hosts` block, the `HKLM` and `HKCU` state, both Defender
+scheduled tasks, any active `hosts` block, the `HKLM` and `HKCU` state, both Defender
 exclusions, `%APPDATA%\FocusLock` and `%ProgramData%\FocusLock`. The log is
 `%TEMP%\FocusLock-uninstall.log`.
 

@@ -305,8 +305,10 @@ func (a *App) DownloadUpdate() string {
 	return a.publishUpdate(m)
 }
 
-// InstallUpdate launches the downloaded, verified installer elevated and
-// quits the app (Setup relaunches it when done). It is REFUSED while a manual
+// InstallUpdate installs the downloaded, verified update: through the
+// "FocusLock Updater" task without a UAC prompt when it exists, otherwise by
+// launching the installer with one prompt. The app then quits (Setup
+// relaunches it when done). It is REFUSED while a manual
 // lock or schedule window is active: the config is reloaded and checked
 // against the trusted clock here, independent of what the UI shows. The
 // installer itself refuses mid-session too. Returns the state JSON.
@@ -350,7 +352,21 @@ func (a *App) InstallUpdate() string {
 	m.state.Phase = phaseInstalling
 	m.state.Error = ""
 	a.publishUpdate(m)
-	if err := updater.Launch(m.setupPath); err != nil {
+
+	// Preferred: the "FocusLock Updater" task registered at install time
+	// installs the update elevated without a UAC prompt (ADR 0009). It
+	// re-fetches and re-verifies the release itself, so the file checked
+	// above is only a shortcut it may reuse.
+	started := time.Now().Add(-2 * time.Second) // LastRunTime has 1s precision
+	if err := runUpdaterTask(); err == nil {
+		m.busy = true
+		go a.waitForUpdaterTask(m, started)
+		return a.updateJSON(m)
+	}
+
+	// Fallback (no task: reduced mode, or installed before ADR 0009): run
+	// the verified setup with one UAC prompt.
+	if err := launchSetup(m.setupPath); err != nil {
 		m.state.Phase = phaseReady
 		m.state.Error = err.Error()
 		return a.publishUpdate(m)
@@ -359,6 +375,22 @@ func (a *App) InstallUpdate() string {
 	// Setup is running (it kills any focus-lock.exe in PrepareToInstall
 	// anyway); quit so it can replace the exe cleanly.
 	m.busy = true
+	a.quitSoon()
+	return a.updateJSON(m)
+}
+
+// Seams for tests.
+var (
+	runUpdaterTask    = updater.RunUpdaterTask
+	updaterTaskStatus = updater.UpdaterTaskStatus
+	launchSetup       = updater.Launch
+	taskPollInterval  = time.Second
+	taskStartTimeout  = 30 * time.Second // the task never showed up as run
+	taskRunTimeout    = 20 * time.Minute // matches --apply-update's own deadline
+)
+
+// quitSoon quits the app shortly, so Setup can replace the exe.
+func (a *App) quitSoon() {
 	if a.ctx != nil {
 		ctx := a.ctx
 		go func() {
@@ -366,5 +398,47 @@ func (a *App) InstallUpdate() string {
 			runtime.Quit(ctx)
 		}()
 	}
-	return a.updateJSON(m)
+}
+
+// waitForUpdaterTask follows the updater task run started at (or after)
+// started. Exit code 0 means Setup is running: the app quits and Setup
+// relaunches it. Any other code is shown as an error and the downloaded
+// update stays ready to retry.
+func (a *App) waitForUpdaterTask(m *updateManager, started time.Time) {
+	seenRunning := false
+	for {
+		time.Sleep(taskPollInterval)
+		st, err := updaterTaskStatus()
+		elapsed := time.Since(started)
+		switch {
+		case err == nil && st.Running:
+			seenRunning = true
+		case err == nil && (seenRunning || !st.LastRun.Before(started)):
+			a.finishUpdaterTask(m, int(st.LastResult))
+			return
+		case !seenRunning && elapsed > taskStartTimeout:
+			a.failUpdaterTask(m, "The updater did not start. Try again, or reinstall Focus Lock from the Releases page.")
+			return
+		case elapsed > taskRunTimeout:
+			a.failUpdaterTask(m, "The updater is taking too long. Try again later.")
+			return
+		}
+	}
+}
+
+func (a *App) finishUpdaterTask(m *updateManager, code int) {
+	if code == updater.ApplyStarted {
+		a.quitSoon()
+		return
+	}
+	a.failUpdaterTask(m, updater.ApplyExitMessage(code))
+}
+
+func (a *App) failUpdaterTask(m *updateManager, msg string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.busy = false
+	m.state.Phase = phaseReady
+	m.state.Error = msg
+	a.publishUpdate(m)
 }

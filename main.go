@@ -32,6 +32,13 @@ func main() {
 		os.Exit(sessionActiveExitCode())
 	}
 
+	// 0b. "--apply-update": run elevated by the "FocusLock Updater" task to
+	// install a newer, signed release without a UAC prompt (apply_update.go).
+	// Never starts the UI or takes either mutex.
+	if len(os.Args) > 1 && os.Args[1] == "--apply-update" {
+		os.Exit(applyUpdateExitCode())
+	}
+
 	// 1. Check for "--enforce" flag (Ghost Mode)
 	// We check this FIRST because the Ghost process runs in the background and
 	// should not be blocked by the single-instance mutex of the UI.
