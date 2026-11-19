@@ -37,6 +37,8 @@ cd frontend && npx tsc --noEmit
   before `go vet` or `go test`.
 - Installer: `powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1`
   (needs Inno Setup 6).
+- CI (`.github/workflows/ci.yml`) runs these checks on every push and pull request to
+  `main`, pinning staticcheck `2025.1.1`.
 - Optional pre-push hook with the same checks as the release gate:
   `git config core.hooksPath scripts/hooks`.
 - There is no frontend test runner or linter yet. `tsc` is the only frontend check.

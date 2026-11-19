@@ -1,7 +1,7 @@
 # Weekly automated release of Focus Lock (see HANDOVER.md §7.3).
 #
 # Every Sunday 02:00 UTC (cron can start late under load) this takes the latest
-# main, gates it on Go vet/tests and the frontend typecheck, builds the
+# main, gates it on Go vet/staticcheck/tests and the frontend typecheck, builds the
 # installer and publishes it as a GitHub Release tagged vYYYY.M.D.N. A
 # scheduled run with no commits since the last release tag is skipped; a
 # manual "Run workflow" always releases (hotfixes).
@@ -78,10 +78,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Wails CLI and Inno Setup
+      - name: Install Wails CLI, staticcheck and Inno Setup
         if: steps.check.outputs.release == 'true'
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0
+          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+          if ($LASTEXITCODE -ne 0) { throw "installing staticcheck failed" }
           $iscc = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe") |
             Where-Object { Test-Path $_ } | Select-Object -First 1
           if (-not $iscc) {
@@ -101,11 +103,13 @@ jobs:
           npm run build
           if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
 
-      - name: Gate - go vet and tests
+      - name: Gate - go vet, staticcheck and tests
         if: steps.check.outputs.release == 'true'
         run: |
           go vet ./...
           if ($LASTEXITCODE -ne 0) { throw "go vet failed" }
+          staticcheck ./...
+          if ($LASTEXITCODE -ne 0) { throw "staticcheck failed" }
           go test ./...
           if ($LASTEXITCODE -ne 0) { throw "go test failed" }
 

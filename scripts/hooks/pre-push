@@ -21,6 +21,12 @@ if [ ! -d frontend/dist ]; then
 	(cd frontend && npm run build) || fail "frontend build"
 fi
 go vet ./... || fail "go vet"
+if command -v staticcheck >/dev/null 2>&1; then
+	staticcheck ./... || fail "staticcheck"
+else
+	echo "pre-push: staticcheck not found; install with: go install honnef.co/go/tools/cmd/staticcheck@2025.1.1" 1>&2
+	exit 1
+fi
 go test ./... || fail "go test"
 (cd frontend && npx tsc --noEmit) || fail "frontend typecheck"
 exit 0
