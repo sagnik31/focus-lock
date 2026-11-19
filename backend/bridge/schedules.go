@@ -46,7 +46,7 @@ func (a *App) SaveSchedules(schedules []storage.Schedule) error {
 				a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\install_setup.ps1 as administrator)", scheduler.EnablePersistence(ghostExe, taskName))
 			}
 			// Spawn first so a strong-mode enforcer is up to receive the next op.
-			a.warnEnforcement("Enforcement process failed to start", spawnGhost(ghostExe, taskName))
+			a.warnEnforcement("Enforcement process failed to start", spawnEnforcer(ghostExe, taskName))
 			// Record where the enforcer lives (routed through the policy).
 			_ = a.applyOp(storage.Operation{Type: storage.OpSetGhostInfo, GhostTaskName: taskName, GhostExePath: ghostExe})
 		}

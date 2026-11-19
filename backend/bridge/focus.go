@@ -17,6 +17,7 @@ import (
 // it; in reduced mode the UI signs it directly.
 func (a *App) StartFocus(seconds int) error {
 	a.Store.Load()
+	a.clearLocalWarning() // a fresh attempt; strong mode only (warning.go)
 
 	// The enforcer runs from the installed app exe itself (no staged copy).
 	currentExe, err := os.Executable()
@@ -33,7 +34,7 @@ func (a *App) StartFocus(seconds int) error {
 
 	// Spawn the Ghost first so it is running to receive the request (strong
 	// mode) and to enforce. schtasks /run is idempotent (single-instance mutex).
-	if err := spawnGhost(ghostExe, taskName); err != nil {
+	if err := spawnEnforcer(ghostExe, taskName); err != nil {
 		a.warnEnforcement("Enforcement process failed to start", err)
 		return err
 	}

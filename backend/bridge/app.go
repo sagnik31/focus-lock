@@ -27,6 +27,10 @@ type App struct {
 	appsMu    sync.Mutex
 	appsCache []sysinfo.AppInfo
 	appsAt    time.Time
+
+	// UI-local enforcement warning for strong mode (warning.go).
+	warnMu       sync.Mutex
+	localWarning string
 }
 
 // NewApp creates a new App application struct
@@ -50,10 +54,13 @@ func (a *App) Startup(ctx context.Context) {
 	// loop (it cannot sign). Its only job here is to make sure the Ghost is
 	// running; everything else is driven through the request channel.
 	if !a.Store.CanSign() {
-		if !isGhostProcessRunning() {
-			if currentExe, err := os.Executable(); err == nil {
-				_ = spawnGhost(currentExe, scheduler.EnforcerTaskName)
+		a.clearLocalWarning()
+		if !ghostRunning() {
+			currentExe, err := os.Executable()
+			if err == nil {
+				err = spawnEnforcer(currentExe, scheduler.EnforcerTaskName)
 			}
+			a.warnEnforcement("Enforcement process failed to start", err)
 		}
 		return
 	}
@@ -96,7 +103,7 @@ func (a *App) Startup(ctx context.Context) {
 		// is running. This is the immediate-recovery path when the UI is open: if the
 		// Ghost was killed, we relaunch it here instead of waiting up to a minute for
 		// the scheduled task's repetition trigger to do it.
-		if !isGhostProcessRunning() {
+		if !ghostRunning() {
 			// The enforcer runs from the installed app exe itself (no staged
 			// copy). Spawn it and make sure reboot persistence is in place.
 			currentExe, err := os.Executable()
@@ -112,7 +119,7 @@ func (a *App) Startup(ctx context.Context) {
 				if !scheduler.PersistenceCurrent(currentExe, taskName) {
 					a.warnEnforcement("Reboot persistence needs a one-time admin setup (run scripts\\install_setup.ps1 as administrator)", scheduler.EnablePersistence(currentExe, taskName))
 				}
-				a.warnEnforcement("Enforcement process failed to start", spawnGhost(currentExe, taskName))
+				a.warnEnforcement("Enforcement process failed to start", spawnEnforcer(currentExe, taskName))
 			}
 		}
 	}
@@ -124,10 +131,16 @@ func (a *App) Startup(ctx context.Context) {
 // GetConfig returns the current configuration
 func (a *App) GetConfig() storage.Config {
 	a.Store.Load()
-	cfg := a.Store.Snapshot()
+	cfg := a.withLocalWarning(a.Store.Snapshot())
 	sort.Strings(cfg.BlockedApps)
 	return cfg
 }
+
+// Seams for tests.
+var (
+	spawnEnforcer = spawnGhost
+	ghostRunning  = isGhostProcessRunning
+)
 
 // GetNow returns the enforcer's trusted time as Unix milliseconds. The frontend
 // polls this and offsets its own clock by the difference, so the countdown and
@@ -204,16 +217,4 @@ func (a *App) applyOp(op storage.Operation) error {
 		return a.Store.ApplyRequest(op, clock.Default.Now())
 	}
 	return a.Store.SubmitRequest(op, 3*time.Second)
-}
-
-// warnEnforcement records a user-visible warning when an enforcement setup
-// step fails, so the UI can tell the user that blocking may not be active.
-// A nil error is a no-op (it does not clear an existing warning; callers reset
-// LastEnforcementError to "" before a fresh attempt).
-func (a *App) warnEnforcement(context string, err error) {
-	if err == nil {
-		return
-	}
-	a.Store.Data.LastEnforcementError = context + ": " + err.Error()
-	_ = a.Store.Save()
 }

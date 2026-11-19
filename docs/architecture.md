@@ -65,6 +65,9 @@ Where the signing secret lives sets the mode:
   writes back a result. The enforcer also keeps a signed copy in `%ProgramData%\FocusLock`
   (admins only) and trusts that copy first on load, so deleting or replacing the
   `%APPDATA%` files doesn't change an active session.
+  Because the UI can't write the config, its own enforcement warnings (for example a
+  failed enforcer spawn) are kept in memory and merged into `GetConfig`'s
+  `LastEnforcementError`.
 - **Reduced mode.** No HKLM secret, for example on a standard-user account or when setup
   hasn't run. A per-user `HKCU` secret is used and the UI signs directly.
 
