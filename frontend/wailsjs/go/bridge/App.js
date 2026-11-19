@@ -58,6 +58,10 @@ export function GetInstalledApps() {
   return window['go']['bridge']['App']['GetInstalledApps']();
 }
 
+export function GetLockState() {
+  return window['go']['bridge']['App']['GetLockState']();
+}
+
 export function GetNow() {
   return window['go']['bridge']['App']['GetNow']();
 }

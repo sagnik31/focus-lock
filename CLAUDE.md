@@ -31,6 +31,8 @@ go vet ./...
 staticcheck ./...
 go test ./...
 cd frontend && npx tsc --noEmit
+cd frontend && npm run lint      # ESLint (typescript-eslint + react-hooks)
+cd frontend && npm test          # Vitest
 ```
 
 - `main.go` embeds `frontend/dist`. If it's missing, run `npm run build` in `frontend/`
@@ -41,7 +43,10 @@ cd frontend && npx tsc --noEmit
   `main`, pinning staticcheck `2025.1.1`.
 - Optional pre-push hook with the same checks as the release gate:
   `git config core.hooksPath scripts/hooks`.
-- There is no frontend test runner or linter yet. `tsc` is the only frontend check.
+- Frontend checks are `tsc`, ESLint (`eslint.config.js`) and Vitest (`src/**/*.test.ts`,
+  node environment, no DOM). Put testable UI logic in pure modules such as
+  `components/duration.ts` and mock the Wails bindings in tests that import them.
+  A disabled lint rule needs a comment saying why.
 
 ## Rules you can't infer from the code
 
@@ -63,7 +68,9 @@ cd frontend && npx tsc --noEmit
   `Store.Data`. The enforcer goroutine reloads it concurrently.
 - **Use `clock.Default.Now()`**, not `time.Now()`, in enforcement and policy code.
 - **Schedule-window logic lives in `storage/schedule.go`** (`SchedulesActiveAt`, which
-  handles overnight windows). Reuse it rather than writing another check.
+  handles overnight windows). Reuse it rather than writing another check. The UI gets the
+  lock in force and its end time from the bound `GetLockState()` (`storage.LockStateAt`);
+  don't reimplement windows in TypeScript.
 
 ### Enforcer and Windows
 

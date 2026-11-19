@@ -59,8 +59,12 @@ export const TimeSeeker: React.FC<TimeSeekerProps> = ({ onDurationChange, onStar
     // Report changes through a ref: the parent passes a new inline callback on
     // every render, and depending on it re-ran this effect (and re-set the
     // parent's state) on every render, in a loop.
+    // The ref is updated in an effect (not during render), and before the
+    // reporting effect below, which runs after it.
     const onChangeRef = useRef(onDurationChange);
-    onChangeRef.current = onDurationChange;
+    useEffect(() => {
+        onChangeRef.current = onDurationChange;
+    });
     useEffect(() => {
         onChangeRef.current(displayH, displayM);
     }, [displayH, displayM]);

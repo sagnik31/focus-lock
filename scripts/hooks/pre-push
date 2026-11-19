@@ -29,4 +29,6 @@ else
 fi
 go test ./... || fail "go test"
 (cd frontend && npx tsc --noEmit) || fail "frontend typecheck"
+(cd frontend && npm run lint --silent) || fail "frontend lint"
+(cd frontend && npm test --silent) || fail "frontend tests"
 exit 0

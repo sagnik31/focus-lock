@@ -16,8 +16,11 @@ export const ScheduleEditor: React.FC<ScheduleEditorProps> = ({ schedule, onSave
     const [endTime, setEndTime] = useState("17:00");
     const [error, setError] = useState("");
 
+    // Reset the form when the schedule being edited changes. Remounting with a
+    // key would avoid the effect, but the editor is reused across schedules.
     useEffect(() => {
         if (schedule) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
             setName(schedule.name);
             setSelectedDays(schedule.days);
             setStartTime(schedule.start_time);

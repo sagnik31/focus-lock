@@ -110,7 +110,7 @@ const GroupEditor: React.FC<{
         setSaving(true);
         try {
             await onSave(name.trim(), list);
-        } catch (e: any) {
+        } catch (e) {
             setErr(String(e));
             setSaving(false);
         }

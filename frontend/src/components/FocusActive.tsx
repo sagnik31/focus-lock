@@ -5,7 +5,7 @@ import { AlertTriangle, Lock, Plus, X } from 'lucide-react';
 
 interface FocusActiveProps {
     endTime: string;
-    pausedUntil: any;
+    pausedUntil?: string;
     blockedApps: string[];
     blockedSites: string[];
     appMap: Map<string, sysinfo.AppInfo>;
@@ -48,9 +48,13 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
     };
 
     useEffect(() => {
+        // Tick once now so the countdown doesn't show 0 for the first second.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         calculateTime();
         const interval = setInterval(calculateTime, 1000);
         return () => clearInterval(interval);
+        // calculateTime is recreated every render; these are its inputs.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [endTime, pausedUntil, nowOffsetMs]);
 
     const handleEmergencyUnlock = async () => {

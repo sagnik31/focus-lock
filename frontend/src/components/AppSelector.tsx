@@ -21,6 +21,9 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocke
         if (isOpen) {
             // Only load apps if empty
             if (apps.length === 0) {
+                // A loading flag for the fetch started here; the rule's
+                // concern (cascading renders) is one extra render on open.
+                // eslint-disable-next-line react-hooks/set-state-in-effect
                 setLoading(true);
                 GetInstalledApps()
                     .then((result) => {
@@ -35,6 +38,9 @@ export function AppSelector({ isOpen, onClose, onSave, currentlyBlocked, isLocke
             // Initialize selection state ONLY when opening
             setSelected(new Set(currentlyBlocked));
         }
+        // Runs only when the selector opens: currentlyBlocked changes on every
+        // 2s poll and would reset the user's in-progress selection.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]); // Removed currentlyBlocked from dependency to prevent reset on poll
 
     const toggleApp = (exeName: string) => {

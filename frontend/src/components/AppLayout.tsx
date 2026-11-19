@@ -500,7 +500,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                                     <div className="p-4 space-y-3">
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="text-slate-500">Duration</span>
-                                            <span className="text-white font-mono font-medium">{formatDuration(pendingSession.until !== undefined ? (pendingSession.until - Date.now()) / 1000 : pendingSession.h * 3600 + pendingSession.m * 60)}</span>
+                                            <span className="text-white font-mono font-medium">{/* Display only: the dialog re-renders on App's 2s poll, and the
+                                                real duration is computed at start (confirmStart). */}
+                                                {/* eslint-disable-next-line react-hooks/purity */}
+                                                {formatDuration(pendingSession.until !== undefined ? (pendingSession.until - Date.now()) / 1000 : pendingSession.h * 3600 + pendingSession.m * 60)}</span>
                                         </div>
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="text-slate-500">Apps Blocked</span>

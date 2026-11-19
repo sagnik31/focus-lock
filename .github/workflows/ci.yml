@@ -42,13 +42,17 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
           if ($LASTEXITCODE -ne 0) { throw "installing staticcheck failed" }
 
-      - name: Frontend typecheck and build
+      - name: Frontend typecheck, lint, tests and build
         working-directory: frontend
         run: |
           npm ci
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
           npx tsc --noEmit
           if ($LASTEXITCODE -ne 0) { throw "tsc failed" }
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { throw "eslint failed" }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw "frontend tests failed" }
           # main.go embeds frontend/dist, so it must exist before go build/vet/test.
           npm run build
           if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }

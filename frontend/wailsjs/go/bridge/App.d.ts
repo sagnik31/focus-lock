@@ -31,6 +31,8 @@ export function GetInsights():Promise<string>;
 
 export function GetInstalledApps():Promise<Array<sysinfo.AppInfo>>;
 
+export function GetLockState():Promise<string>;
+
 export function GetNow():Promise<number>;
 
 export function GetRecentSites():Promise<Array<string>>;

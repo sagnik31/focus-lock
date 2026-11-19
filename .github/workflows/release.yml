@@ -1,7 +1,8 @@
 # Weekly automated release of Focus Lock (see HANDOVER.md §7.3).
 #
 # Every Sunday 02:00 UTC (cron can start late under load) this takes the latest
-# main, gates it on Go vet/staticcheck/tests and the frontend typecheck, builds the
+# main, gates it on Go vet/staticcheck/tests and the frontend typecheck, lint
+# and tests, builds the
 # installer and publishes it as a GitHub Release tagged vYYYY.M.D.N. A
 # scheduled run with no commits since the last release tag is skipped; a
 # manual "Run workflow" always releases (hotfixes).
@@ -91,7 +92,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "choco install innosetup failed" }
           }
 
-      - name: Gate - frontend typecheck and build
+      - name: Gate - frontend typecheck, lint, tests and build
         if: steps.check.outputs.release == 'true'
         working-directory: frontend
         run: |
@@ -99,6 +100,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
           npx tsc --noEmit
           if ($LASTEXITCODE -ne 0) { throw "tsc failed" }
+          npm run lint
+          if ($LASTEXITCODE -ne 0) { throw "eslint failed" }
+          npm test
+          if ($LASTEXITCODE -ne 0) { throw "frontend tests failed" }
           # main.go embeds frontend/dist, so it must exist before go vet/test.
           npm run build
           if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }

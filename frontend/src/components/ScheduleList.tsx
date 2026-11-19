@@ -13,14 +13,7 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
     const [schedules, setSchedules] = useState<storage.Schedule[]>([]);
     const [editingSchedule, setEditingSchedule] = useState<storage.Schedule | null>(null);
     const [isCreating, setIsCreating] = useState(false);
-    const [isLoading, setIsLoading] = useState(true);
     const [saveError, setSaveError] = useState("");
-
-    // Load on mount, and again when a session starts or ends (the backend's
-    // rules for what may change depend on it).
-    useEffect(() => {
-        loadSchedules();
-    }, [isLocked]);
 
     const loadSchedules = async (): Promise<storage.Schedule[]> => {
         try {
@@ -30,10 +23,18 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
         } catch (err) {
             console.error("Failed to load schedules", err);
             return schedules;
-        } finally {
-            setIsLoading(false);
         }
     };
+
+    // Load on mount, and again when a session starts or ends (the backend's
+    // rules for what may change depend on it).
+    useEffect(() => {
+        // Loading from the backend; state is set after the await resolves.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        loadSchedules();
+        // loadSchedules is recreated every render; reload only on these.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLocked]);
 
     // Every change is applied to the backend's CURRENT list (not this
     // component's copy, which may predate an import), then the list is
@@ -47,7 +48,7 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
             await SaveSchedules(change(current));
             await loadSchedules();
             return true;
-        } catch (err: any) {
+        } catch (err) {
             setSaveError(String(err));
             await loadSchedules();
             return false;

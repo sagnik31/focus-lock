@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, GetNow, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings, ForgetRecentSite, SaveSiteGroups } from "../wailsjs/go/bridge/App";
+import { AddApp, RemoveApp, StartFocus, StopFocus, GetConfig, GetLockState, GetNow, SetBlockedApps, GetInstalledApps, GetTopBlockedApps, AddBlockedSite, RemoveBlockedSite, AddBlockedSites, RemoveBlockedSites, SetBlockCommonVPN, ImportSettings, ForgetRecentSite, SaveSiteGroups } from "../wailsjs/go/bridge/App";
 import { storage, sysinfo } from "../wailsjs/go/models";
 import { FocusActive } from "./components/FocusActive";
 import { AppLayout } from "./components/AppLayout";
 import { PendingSession, formatDuration } from "./components/duration";
 import { useUpdateState } from "./components/updates";
+import { LockState, NO_LOCK, parseLockState } from "./components/lockState";
 
 function App() {
     const [config, setConfig] = useState<storage.Config | null>(null);
@@ -21,12 +22,15 @@ function App() {
     // timer and lock state aligned with what the Ghost actually enforces, even if
     // the system clock is changed.
     const [nowOffset, setNowOffset] = useState(0);
+    // The lock in force, from the backend's schedule logic (GetLockState).
+    const [lockState, setLockState] = useState<LockState>(NO_LOCK);
     const [updateState, applyUpdateState] = useUpdateState();
 
     const refresh = async () => {
         try {
             const data = await GetConfig();
             setConfig(data);
+            setLockState(parseLockState(await GetLockState()));
             try {
                 const serverMs = await GetNow();
                 setNowOffset(serverMs - Date.now());
@@ -53,6 +57,9 @@ function App() {
     const trustedNow = () => new Date(Date.now() + nowOffset);
 
     useEffect(() => {
+        // Polling the backend is the external system this effect syncs with;
+        // refresh only sets state after its awaits resolve.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         refresh();
         const interval = setInterval(refresh, 2000); // Poll for updates
 
@@ -78,54 +85,7 @@ function App() {
         return map;
     }, [installedApps]);
 
-    // Helper to check active schedule
-    const getActiveScheduleEndTime = (schedules: storage.Schedule[] | undefined, now: Date): Date | null => {
-        if (!schedules) return null;
-
-        const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-        const today = days[now.getDay()];
-        const yesterday = days[(now.getDay() + 6) % 7];
-        const currentTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); // "HH:MM" 24h
-
-        // dayOffset is added to the (trusted) current date to land on the window's END day.
-        const endDateFor = (endTime: string, dayOffset: number): Date => {
-            const [h, m] = endTime.split(':').map(Number);
-            const endDate = new Date(now.getTime());
-            endDate.setDate(endDate.getDate() + dayOffset);
-            endDate.setHours(h, m, 0, 0);
-            return endDate;
-        };
-
-        for (const s of schedules) {
-            if (!s.enabled) continue;
-            if (s.start_time === s.end_time) continue; // zero-length window
-
-            const overnight = s.end_time < s.start_time; // crosses midnight (mirrors backend)
-
-            if (s.days.includes(today)) {
-                if (overnight) {
-                    // Pre-midnight half, on the start day: ends tomorrow.
-                    if (currentTime >= s.start_time) return endDateFor(s.end_time, 1);
-                } else if (currentTime >= s.start_time && currentTime < s.end_time) {
-                    return endDateFor(s.end_time, 0);
-                }
-            }
-
-            // Post-midnight half of a window that started yesterday: ends today.
-            if (overnight && s.days.includes(yesterday) && currentTime < s.end_time) {
-                return endDateFor(s.end_time, 0);
-            }
-        }
-        return null;
-    };
-
-    // Derived State
-    const activeScheduleEndTime = useMemo(() => getActiveScheduleEndTime(config?.schedules, trustedNow()), [config, nowOffset, new Date().getMinutes()]); // Re-eval on minute change? Effect loop handles refresh.
-
-    const isLocked = useMemo(() => {
-        const manualLock = config?.lock_end_time && new Date(config.lock_end_time) > trustedNow();
-        return manualLock || !!activeScheduleEndTime;
-    }, [config, activeScheduleEndTime, nowOffset]);
+    const isLocked = lockState.kind !== 'none';
 
     const handleAdd = async () => {
         if (!newApp) return;
@@ -133,8 +93,8 @@ function App() {
             await AddApp(newApp);
             setNewApp("");
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -143,8 +103,8 @@ function App() {
         try {
             await AddApp(name);
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -152,8 +112,8 @@ function App() {
         try {
             await RemoveApp(app);
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -161,9 +121,9 @@ function App() {
         try {
             await SetBlockedApps(apps);
             succeeded();
-        } catch (err: any) {
+        } catch (err) {
             console.error("SetBlockedApps failed:", err);
-            setError(err.toString());
+            setError(String(err));
         }
     };
 
@@ -172,8 +132,8 @@ function App() {
         try {
             await AddBlockedSite(url);
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -181,8 +141,8 @@ function App() {
         try {
             await RemoveBlockedSite(url);
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -190,8 +150,8 @@ function App() {
         try {
             await StopFocus();
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -199,8 +159,8 @@ function App() {
         try {
             await SetBlockCommonVPN(enabled);
             succeeded();
-        } catch (err: any) {
-            setError(err.toString());
+        } catch (err) {
+            setError(String(err));
         }
     };
 
@@ -209,8 +169,8 @@ function App() {
         try {
             await ImportSettings(jsonContent);
             succeeded();
-        } catch (err: any) {
-            setError("Import failed: " + err.toString());
+        } catch (err) {
+            setError("Import failed: " + String(err));
             throw err; // Re-throw to let caller handle UI
         }
     };
@@ -257,21 +217,21 @@ function App() {
 
             succeeded();
             refreshTopApps();
-        } catch (err: any) {
+        } catch (err) {
             setError("Failed to start: " + err);
         }
     };
 
     const handleAddSites = (urls: string[]) => {
-        AddBlockedSites(urls).then(succeeded).catch((err: any) => setError(err.toString()));
+        AddBlockedSites(urls).then(succeeded).catch((err) => setError(String(err)));
     };
 
     const handleRemoveSites = (urls: string[]) => {
-        RemoveBlockedSites(urls).then(succeeded).catch((err: any) => setError(err.toString()));
+        RemoveBlockedSites(urls).then(succeeded).catch((err) => setError(String(err)));
     };
 
     const handleForgetRecent = (url: string) => {
-        ForgetRecentSite(url).then(succeeded).catch((err: any) => setError(err.toString()));
+        ForgetRecentSite(url).then(succeeded).catch((err) => setError(String(err)));
     };
 
     // Rejects so the group editor can show the error inline and stay open.
@@ -282,15 +242,9 @@ function App() {
     };
 
     if (isLocked && config) {
-        // Enforcement lasts until BOTH the manual lock and the schedule window
-        // are over, so the lock screen counts down to whichever ends later.
-        // (Showing the schedule's end while a longer manual lock ran made the
-        // countdown reach zero early and offer a Quit that the backend refused.)
-        const manualEnd = config.lock_end_time && new Date(config.lock_end_time) > trustedNow()
-            ? new Date(config.lock_end_time)
-            : null;
-        const scheduleEndsLast = !!activeScheduleEndTime && (!manualEnd || activeScheduleEndTime > manualEnd);
-        const effectiveEndTime = (scheduleEndsLast ? activeScheduleEndTime : manualEnd)?.toISOString() ?? config.lock_end_time;
+        // The backend reports whichever of the manual lock and the schedule
+        // window ends later, so the countdown matches enforcement.
+        const effectiveEndTime = lockState.endTime;
 
         // If user wants to see settings during active session
         if (focusViewMode === 'settings') {
@@ -338,7 +292,7 @@ function App() {
                 blockedSites={config.blocked_sites || []}
                 appMap={appMap}
                 pausedUntil={config.paused_until}
-                isSchedule={scheduleEndsLast}
+                isSchedule={lockState.kind === 'schedule'}
                 emergencyUnlocksUsed={config.emergency_unlocks_used || 0}
                 onShowSettings={() => setFocusViewMode('settings')}
                 onQuit={handleQuit}

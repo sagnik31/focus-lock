@@ -56,6 +56,9 @@ export function InlineKeypad({ onStart, onBack }: InlineKeypadProps) {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
+        // handleOK and the digit handlers read only buffer (or use functional
+        // updates); onBack/onStart are App handlers that only call setters.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [buffer]); // Re-bind when buffer changes to ensure state freshness or use functional updates everywhere (already doing so)
 
     return (

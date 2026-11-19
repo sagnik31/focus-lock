@@ -151,6 +151,26 @@ func (a *App) GetNow() int64 {
 	return clock.Default.Now().UnixMilli()
 }
 
+// GetLockState returns the lock in force now as a JSON string:
+// {"kind": "manual"|"schedule"|"none", "end_time": RFC 3339 or ""}. The end
+// time is whichever of the manual lock and the active schedule windows ends
+// later, computed with the same schedule logic the enforcer uses (overnight
+// windows included), so the lock screen's countdown can't drift from it.
+func (a *App) GetLockState() (string, error) {
+	a.Store.Load()
+	cfg := a.Store.Snapshot()
+	return lockStateJSON(storage.LockStateAt(&cfg, clock.Default.Now()))
+}
+
+func lockStateJSON(st storage.LockState) (string, error) {
+	end := ""
+	if !st.EndTime.IsZero() {
+		end = st.EndTime.Format(time.RFC3339Nano)
+	}
+	b, err := json.Marshal(map[string]string{"kind": st.Kind, "end_time": end})
+	return string(b), err
+}
+
 // GetInsights returns the reflection data for the Insights view as a JSON
 // string (same string-return pattern as ExportSettings, so it needs no
 // generated model). It computes streaks with the shared, tested Go logic and

@@ -24,8 +24,8 @@ export function ImportModal({ isOpen, onClose, onImport, onSuccess }: ImportModa
             await onImport(content);
             onSuccess();
             onClose();
-        } catch (err: any) {
-            setImportError(err.toString());
+        } catch (err) {
+            setImportError(String(err));
         } finally {
             setIsImporting(false);
             event.target.value = '';
@@ -45,8 +45,8 @@ export function ImportModal({ isOpen, onClose, onImport, onSuccess }: ImportModa
             onSuccess();
             setPasteText('');
             onClose();
-        } catch (err: any) {
-            setImportError(err.toString());
+        } catch (err) {
+            setImportError(String(err));
         } finally {
             setIsImporting(false);
         }
