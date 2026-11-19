@@ -67,12 +67,14 @@ func (a *App) StartFocus(seconds int) error {
 func (a *App) StopFocus() error {
 	a.Store.Load()
 
-	// Best-effort unblock; in strong mode the Ghost re-manages the hosts file.
-	_ = hosts.Unblock()
-
 	if err := a.applyOp(storage.Operation{Type: storage.OpStopFocus}); err != nil {
 		return err
 	}
+
+	// Best-effort unblock, only once the policy has allowed the stop: a
+	// refused stop must leave the block in place. In strong mode the Ghost
+	// re-manages the hosts file anyway.
+	_ = unblockHosts()
 
 	// Record the completed session for history/streaks. No-op if the Ghost's
 	// enforcer already finalised it, or in strong mode where the UI can't sign
@@ -104,6 +106,9 @@ func (a *App) StopFocus() error {
 	}
 	return nil
 }
+
+// unblockHosts is a seam for tests.
+var unblockHosts = hosts.Unblock
 
 // EmergencyUnlock temporarily pauses enforcement (limited uses per session).
 // The 2-use limit and the counter live in the signed config, so the policy

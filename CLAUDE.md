@@ -93,7 +93,8 @@ cd frontend && npx tsc --noEmit
   `watchdog/match.go`) and unit-test it there. No GUI or Windows state is needed.
 - **Never call `storage.NewStore()` in tests.** It touches the real registry. Build a
   `Store` literal with `filePath` in `t.TempDir()`, `activeSecret`, `canSign: true` and a
-  nil `regStore` (see `testSigningStore` in `backend/storage/concurrency_test.go`).
+  nil `regStore` (see `testSigningStore` in `backend/storage/concurrency_test.go`). Tests in other packages use
+  `storage.NewLocalStore(path, secret)`, which builds the same thing.
 
 ### Frontend and bindings
 
