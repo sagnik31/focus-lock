@@ -43,7 +43,8 @@ func reload(t *testing.T, s *Store) Config {
 // primary is rewritten.
 func TestSecureCopySurvivesDeletedUserFiles(t *testing.T) {
 	s := secureTestStore(t)
-	s.Data = secureLockedConfig()
+	want := secureLockedConfig()
+	s.Data = want
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +58,7 @@ func TestSecureCopySurvivesDeletedUserFiles(t *testing.T) {
 	if len(got.BlockedApps) != 1 || len(got.BlockedSites) != 1 || len(got.Schedules) != 1 {
 		t.Fatalf("lists not restored: %+v", got)
 	}
-	if !got.LockEndTime.Equal(secureLockedConfig().LockEndTime) {
+	if !got.LockEndTime.Equal(want.LockEndTime) {
 		t.Errorf("LockEndTime = %v", got.LockEndTime)
 	}
 	if _, err := os.Stat(s.filePath); err != nil {
