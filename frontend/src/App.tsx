@@ -43,6 +43,13 @@ function App() {
         GetTopBlockedApps().then(setTopApps).catch(console.error);
     };
 
+    // An action succeeded: clear any error banner from an earlier failure,
+    // then pick up the new config.
+    const succeeded = () => {
+        setError("");
+        refresh();
+    };
+
     const trustedNow = () => new Date(Date.now() + nowOffset);
 
     useEffect(() => {
@@ -125,7 +132,7 @@ function App() {
         try {
             await AddApp(newApp);
             setNewApp("");
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
@@ -135,21 +142,25 @@ function App() {
     const handleAddByName = async (name: string) => {
         try {
             await AddApp(name);
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
     };
 
     const handleRemove = async (app: string) => {
-        await RemoveApp(app);
-        refresh();
+        try {
+            await RemoveApp(app);
+            succeeded();
+        } catch (err: any) {
+            setError(err.toString());
+        }
     };
 
     const handleSaveApps = async (apps: string[]) => {
         try {
             await SetBlockedApps(apps);
-            refresh();
+            succeeded();
         } catch (err: any) {
             console.error("SetBlockedApps failed:", err);
             setError(err.toString());
@@ -160,7 +171,7 @@ function App() {
     const handleAddSite = async (url: string) => {
         try {
             await AddBlockedSite(url);
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
@@ -169,7 +180,7 @@ function App() {
     const handleRemoveSite = async (url: string) => {
         try {
             await RemoveBlockedSite(url);
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
@@ -178,7 +189,7 @@ function App() {
     const handleQuit = async () => {
         try {
             await StopFocus();
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
@@ -187,7 +198,7 @@ function App() {
     const handleToggleVPN = async (enabled: boolean) => {
         try {
             await SetBlockCommonVPN(enabled);
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError(err.toString());
         }
@@ -197,7 +208,7 @@ function App() {
     const handleImportSettings = async (jsonContent: string) => {
         try {
             await ImportSettings(jsonContent);
-            refresh();
+            succeeded();
         } catch (err: any) {
             setError("Import failed: " + err.toString());
             throw err; // Re-throw to let caller handle UI
@@ -244,7 +255,7 @@ function App() {
                 requireInteraction: false,
             });
 
-            refresh();
+            succeeded();
             refreshTopApps();
         } catch (err: any) {
             setError("Failed to start: " + err);
@@ -252,20 +263,21 @@ function App() {
     };
 
     const handleAddSites = (urls: string[]) => {
-        AddBlockedSites(urls).then(refresh).catch((err: any) => setError(err.toString()));
+        AddBlockedSites(urls).then(succeeded).catch((err: any) => setError(err.toString()));
     };
 
     const handleRemoveSites = (urls: string[]) => {
-        RemoveBlockedSites(urls).then(refresh).catch((err: any) => setError(err.toString()));
+        RemoveBlockedSites(urls).then(succeeded).catch((err: any) => setError(err.toString()));
     };
 
     const handleForgetRecent = (url: string) => {
-        ForgetRecentSite(url).then(refresh).catch((err: any) => setError(err.toString()));
+        ForgetRecentSite(url).then(succeeded).catch((err: any) => setError(err.toString()));
     };
 
     // Rejects so the group editor can show the error inline and stay open.
     const handleSaveGroups = async (groups: storage.SiteGroup[]) => {
         await SaveSiteGroups(groups);
+        setError("");
         await refresh();
     };
 
@@ -288,6 +300,7 @@ function App() {
                     newApp={newApp}
                     setNewApp={setNewApp}
                     error={error}
+                    onDismissError={() => setError("")}
                     isSelectorOpen={isSelectorOpen}
                     setIsSelectorOpen={setIsSelectorOpen}
                     showConfirm={showConfirm}
@@ -330,6 +343,8 @@ function App() {
                 onShowSettings={() => setFocusViewMode('settings')}
                 onQuit={handleQuit}
                 enforcementError={config.last_enforcement_error}
+                error={error}
+                onDismissError={() => setError("")}
                 nowOffsetMs={nowOffset}
                 updateDownloaded={updateState?.available && updateState.downloaded ? updateState.latest : undefined}
             />
@@ -342,6 +357,7 @@ function App() {
             newApp={newApp}
             setNewApp={setNewApp}
             error={error}
+            onDismissError={() => setError("")}
             isSelectorOpen={isSelectorOpen}
             setIsSelectorOpen={setIsSelectorOpen}
             showConfirm={showConfirm}

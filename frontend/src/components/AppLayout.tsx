@@ -15,7 +15,7 @@ import { useState } from "react";
 import logo from '../assets/logo.png';
 import {
     Download, Check, AlertTriangle, Lock, ArrowLeft, Search, Trash2,
-    Ban, ChevronDown, Plus, BarChart3, RefreshCw,
+    Ban, ChevronDown, Plus, BarChart3, RefreshCw, X,
 } from 'lucide-react';
 
 interface AppLayoutProps {
@@ -23,6 +23,7 @@ interface AppLayoutProps {
     newApp: string;
     setNewApp: (val: string) => void;
     error: string;
+    onDismissError?: () => void;
 
     // State
     isSelectorOpen: boolean;
@@ -74,6 +75,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     newApp,
     setNewApp,
     error,
+    onDismissError,
     isSelectorOpen,
     setIsSelectorOpen,
     showConfirm,
@@ -179,9 +181,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 </header>
 
                 {error && (
-                    <div className="mb-4 bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl flex items-center gap-3 backdrop-blur-sm text-sm shrink-0">
+                    <div role="alert" className="mb-4 bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl flex items-center gap-3 backdrop-blur-sm text-sm shrink-0">
                         <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                        {error}
+                        <span className="flex-1">{error}</span>
+                        {onDismissError && (
+                            <button onClick={onDismissError} aria-label="Dismiss error" className="text-red-300/70 hover:text-red-100 transition-colors">
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
                     </div>
                 )}
 

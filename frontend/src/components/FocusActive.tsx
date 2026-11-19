@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { sysinfo } from "../../wailsjs/go/models";
 import { EmergencyUnlock } from "../../wailsjs/go/bridge/App";
-import { AlertTriangle, Lock, Plus } from 'lucide-react';
+import { AlertTriangle, Lock, Plus, X } from 'lucide-react';
 
 interface FocusActiveProps {
     endTime: string;
@@ -14,6 +14,9 @@ interface FocusActiveProps {
     onShowSettings?: () => void;
     onQuit?: () => void;
     enforcementError?: string;
+    // Error from the last failed action in App (for example a refused quit).
+    error?: string;
+    onDismissError?: () => void;
     // Offset (ms) from this browser's clock to the enforcer's trusted clock, so
     // the countdown matches what the Ghost enforces even if the system clock moves.
     nowOffsetMs?: number;
@@ -21,9 +24,10 @@ interface FocusActiveProps {
     updateDownloaded?: string;
 }
 
-export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, nowOffsetMs = 0, updateDownloaded }: FocusActiveProps) {
+export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, error, onDismissError, nowOffsetMs = 0, updateDownloaded }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
+    const [unlockError, setUnlockError] = useState("");
 
     const calculateTime = () => {
         const now = new Date().getTime() + nowOffsetMs;
@@ -52,9 +56,11 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
     const handleEmergencyUnlock = async () => {
         try {
             await EmergencyUnlock();
+            setUnlockError("");
             // The polling in App.tsx will update props shortly
         } catch (e) {
             console.error("Failed to emergency unlock:", e);
+            setUnlockError("Emergency unlock failed: " + String(e));
         }
     };
 
@@ -81,6 +87,18 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                             <p className="font-semibold text-amber-300">Enforcement warning</p>
                             <p className="text-amber-200/80">{enforcementError}</p>
                         </div>
+                    </div>
+                )}
+
+                {error && (
+                    <div role="alert" className="w-full bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl flex items-center gap-3 text-sm">
+                        <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                        <span className="flex-1">{error}</span>
+                        {onDismissError && (
+                            <button onClick={onDismissError} aria-label="Dismiss error" className="text-red-300/70 hover:text-red-100 transition-colors">
+                                <X className="w-4 h-4" />
+                            </button>
+                        )}
                     </div>
                 )}
 
@@ -142,6 +160,14 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                                 </button>
                                 {emergencyUnlocksUsed >= 2 && (
                                     <p className="text-xs text-slate-500">Session limit reached</p>
+                                )}
+                                {unlockError && (
+                                    <p role="alert" className="text-xs text-red-400 flex items-center justify-center gap-2">
+                                        {unlockError}
+                                        <button onClick={() => setUnlockError("")} aria-label="Dismiss" className="text-red-300/70 hover:text-red-100">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </p>
                                 )}
                             </div>
 
