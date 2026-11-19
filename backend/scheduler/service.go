@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"strings"
 	"unicode/utf16"
@@ -97,7 +96,7 @@ func EnablePersistence(exePath, taskName string) error {
 	// "ERROR: Access is denied." when the UI isn't elevated) instead of a bare
 	// "exit status 1". Registering a HighestAvailable task needs an elevated
 	// process; see scripts/setup_persistence.ps1 for the one-time admin setup.
-	cmd := exec.Command("schtasks", "/create", "/tn", taskName, "/xml", f.Name(), "/f")
+	cmd := command("schtasks", "/create", "/tn", taskName, "/xml", f.Name(), "/f")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if runErr := cmd.Run(); runErr != nil {
@@ -126,7 +125,7 @@ func PersistenceCurrent(exePath, taskName string) bool {
 		return false
 	}
 	// schtasks returns non-zero (and Output errors) when the task is missing.
-	out, err := exec.Command("schtasks", "/query", "/tn", taskName, "/xml").Output()
+	out, err := command("schtasks", "/query", "/tn", taskName, "/xml").Output()
 	if err != nil {
 		return false
 	}
@@ -148,7 +147,7 @@ func DisablePersistence(taskName string) error {
 	if taskName == "" {
 		return nil
 	}
-	return exec.Command("schtasks", "/delete", "/tn", taskName, "/f").Run()
+	return command("schtasks", "/delete", "/tn", taskName, "/f").Run()
 }
 
 func xmlEscape(s string) string {
