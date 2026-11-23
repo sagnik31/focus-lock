@@ -14,9 +14,9 @@ since an install stops the enforcer.
 ## Decision
 
 - **Weekly, automatic releases.** A GitHub Actions workflow runs every Sunday (and on
-  demand) from `main`. It skips weeks with no new commits, runs `go vet`, `go test` and the
-  frontend typecheck, builds the installer, and publishes a GitHub Release. If the gate
-  fails, there's no release.
+  demand) from `main`. It skips weeks with no new commits, runs the checks (originally
+  `go vet`, `go test` and the frontend typecheck; now the same gate as CI), builds the
+  installer, and publishes a GitHub Release. If the gate fails, there's no release.
 - **Calendar versions** `YYYY.M.D.N` (tag `vYYYY.M.D.N`). They always increase, need no
   manual bump, and are valid as a Windows file version. The version is stamped into
   `backend/version.Version` at build time. Local builds are `dev` and never update.

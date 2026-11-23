@@ -45,5 +45,6 @@ request directly.
   directly.
 - Strictness is a product choice. For example, any enabled schedule can't be re-timed
   during a lock, not only the active one, and an invalid schedule rejects the whole import.
-- The frontend still has a copy of the schedule-window logic for display, which can drift
-  from the Go version.
+- The UI doesn't decide what is locked. Since 2026-11-20 it gets the lock in force and its
+  end time from the bound `GetLockState()` (`storage.LockStateAt`). Before that it had its
+  own TypeScript copy of the schedule-window logic, which could drift from the Go version.

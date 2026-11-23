@@ -30,7 +30,10 @@ weaken it.
 - **Hard to bypass**: a background enforcer survives closing the window and restarts,
   session time is checked against network time, and the settings are signed so editing
   them doesn't help.
+- **VPN blocking** (optional): closes common VPN apps and blocks their sites, so a VPN
+  can't route around the block.
 - **Emergency unlocks**: two one-minute pauses per session.
+- **Import**: load block lists, groups and schedules from a settings file.
 - **Insights**: streaks, total focus time, most-blocked apps and session history.
 - **Automatic updates**: weekly releases, installed from inside the app between sessions.
 
@@ -52,7 +55,7 @@ Updates, uninstalling and the standard-user caveat are covered in
 
 ## Build from source
 
-You need Go 1.24+, Node.js 18+ and the
+You need Go 1.24+, Node.js 22.13+ and the
 [Wails CLI](https://wails.io/docs/gettingstarted/installation).
 
 ```bash

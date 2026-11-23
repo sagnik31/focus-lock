@@ -50,12 +50,13 @@ Get-CimInstance Win32_Process -Filter "Name='focus-lock.exe'" | Select ProcessId
 ## 4. Verify full teardown
 
 ```powershell
-Get-ScheduledTask 'FocusLock Enforcer', FocusLockGhost, FocusLockLauncher -ErrorAction SilentlyContinue  # nothing
+Get-ScheduledTask 'FocusLock Enforcer', 'FocusLock Updater', FocusLockGhost, FocusLockLauncher -ErrorAction SilentlyContinue  # nothing
 Test-Path HKLM:\SOFTWARE\FocusLock                                       # False
 Test-Path HKCU:\Software\FocusLock                                       # False
 (Get-MpPreference).ExclusionPath                                         # neither Focus Lock path
 Test-Path $env:APPDATA\FocusLock                                         # False (see note)
 Test-Path 'C:\Program Files\Focus Lock'                                  # False
+Test-Path $env:ProgramData\FocusLock                                     # False
 Get-Process focus-lock -ErrorAction SilentlyContinue                     # nothing
 Select-String 'FOCUS LOCK' C:\Windows\System32\drivers\etc\hosts         # nothing; blocked sites load again
 ```
@@ -77,8 +78,8 @@ releases; a second run on the same UTC day gets `.1`).
 
 - [ ] GitHub → Actions → **release** → **Run workflow** on `main` (or
       `scripts\release.ps1 -Watch`). The run is green.
-- [ ] The new release `vYYYY.M.D.N` has 3 assets: `FocusLock-Setup-<ver>.exe`,
-      `FocusLock-Setup.exe`, `SHA256SUMS.txt`.
+- [ ] The new release `vYYYY.M.D.N` has 4 assets: `FocusLock-Setup-<ver>.exe`,
+      `FocusLock-Setup.exe`, `SHA256SUMS.txt` and `SHA256SUMS.txt.sig` (see §5.8).
 - [ ] `https://github.com/sagnik31/focus-lock/releases/latest/download/FocusLock-Setup.exe`
       downloads, and its hash matches `SHA256SUMS.txt`:
       `(Get-FileHash .\FocusLock-Setup.exe).Hash.ToLower()`.
@@ -202,3 +203,24 @@ running. Any installed build from `main` after `1f46f89` (or `wails build`) will
       from `%APPDATA%\FocusLock`. Within a minute the enforcer is back, the four files are back,
       the app and site are still blocked, schedules are intact and no "could not be recovered"
       banner shows. Uninstall removes `%ProgramData%\FocusLock`.
+
+## 7. Gap-audit fixes (2026-11-20)
+
+From G11–G20 (`0c402bd`..`ed2be63`). The logic is unit-tested; these check what tests can't.
+Any installed build from `main` after `ed2be63` will do.
+
+- [ ] **Lock-screen countdown from Go (G17).** Start a 5-minute manual lock: the countdown
+      starts at about 5:00 and ends on time. Repeat with a schedule window covering now, and
+      with an overnight window (for example 22:00–06:00 while it's active): the lock screen
+      shows the window's end, and nothing unlocks early.
+- [ ] **No console flash (G13).** Click **Start focus**: no console window flashes up.
+- [ ] **Refused stop keeps the block (G14).** The UI offers no way to end an active lock, so
+      use a devtools build as in §5.4: during a lock, run
+      `await window.go.bridge.App.StopFocus()` in the console. It is refused and blocked sites
+      still fail to load.
+- [ ] **Error banners (G18).** Trigger a refused change during a session: a red banner
+      shows with a dismiss button, and a later successful action clears it. The lock screen
+      shows App errors (such as a refused quit) with a dismiss button too, and a failed
+      emergency unlock shows its error under the button.
+- [ ] **Strong-mode warnings stay visible (G11).** Hard to force by hand; if the enforcer fails
+      to start from the UI in strong mode, the amber banner should show it instead of nothing.

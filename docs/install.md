@@ -33,7 +33,8 @@ runs in reduced mode. The log is `%TEMP%\FocusLock-setup.log`.
 Install once. After that the app updates itself.
 
 - **Weekly releases.** Every Sunday a GitHub Actions workflow takes the latest `main`, runs
-  the tests and typecheck, and publishes a release. Weeks with no changes are skipped.
+  the same checks as CI (Go vet, staticcheck and tests; the frontend typecheck, lint and
+  tests), and publishes a release. Weeks with no changes are skipped.
   Versions are calendar versions `YYYY.M.D.N` (tag `vYYYY.M.D.N`).
 - **In the app.** Click **Updates** in the header. The app also checks quietly on start, at
   most once a day. **Download** fetches the new installer and verifies it against the
@@ -50,17 +51,17 @@ Install once. After that the app updates itself.
 ## Uninstall
 
 Uninstall from **Settings → Apps**. It stops the enforcer and the app and removes the
-scheduled tasks, any active `hosts` block, the `HKLM` and `HKCU` state, both Defender
-exclusions, `%APPDATA%\FocusLock` and `%ProgramData%\FocusLock`. The log is
-`%TEMP%\FocusLock-uninstall.log`.
+scheduled tasks, any active `hosts` block and Chrome policy entries, the `HKLM` and `HKCU`
+state, both Defender exclusions, `%APPDATA%\FocusLock` and `%ProgramData%\FocusLock`. The
+log is `%TEMP%\FocusLock-uninstall.log`.
 
 ## Build from source
 
-Prerequisites: [Go](https://go.dev/dl/) 1.24+, [Node.js](https://nodejs.org/) 18+, and the
-Wails CLI:
+Prerequisites: [Go](https://go.dev/dl/) 1.24+, [Node.js](https://nodejs.org/) 22.13+ (CI
+uses 24), and the Wails CLI:
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.11.0   # matches go.mod
 wails doctor      # checks WebView2 and the rest of the toolchain
 wails build       # writes build/bin/focus-lock.exe
 wails dev         # hot-reloading dev mode

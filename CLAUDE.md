@@ -91,8 +91,9 @@ cd frontend && npm test          # Vitest
   (`go run ./cmd/signsums -genkey -out <file outside the repo>`).
 - **Keep the `*_other.go` `!windows` stubs** so `go build ./...` works on other platforms.
   `watchdog` builds only on Windows.
-- **Spawned console tools** (`schtasks`, PowerShell) should use the `CREATE_NO_WINDOW`
-  `SysProcAttr` from `bridge/spawn_windows.go` so no console flashes.
+- **Spawned console tools** (`schtasks`, PowerShell, `ipconfig`) must set `CREATE_NO_WINDOW`
+  (and `HideWindow`) in `SysProcAttr` so no console flashes. See `bridge/spawn_windows.go`,
+  or use the `scheduler.command` helper (`scheduler/console_windows.go`) for `schtasks`.
 
 ### Tests
 

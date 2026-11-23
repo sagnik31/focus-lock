@@ -1,9 +1,10 @@
-# Weekly automated release of Focus Lock (see HANDOVER.md §7.3).
+# Weekly automated release of Focus Lock (docs/adr/0008 and 0009, and the
+# Updates section of docs/architecture.md).
 #
 # Every Sunday 02:00 UTC (cron can start late under load) this takes the latest
 # main, gates it on Go vet/staticcheck/tests and the frontend typecheck, lint
-# and tests, builds the
-# installer and publishes it as a GitHub Release tagged vYYYY.M.D.N. A
+# and tests, builds the installer, signs SHA256SUMS.txt and publishes it all
+# as a GitHub Release tagged vYYYY.M.D.N. A
 # scheduled run with no commits since the last release tag is skipped; a
 # manual "Run workflow" always releases (hotfixes).
 #
