@@ -15,7 +15,7 @@ process can read.
 
 - The config is **HMAC-SHA256 signed** and written atomically (temp file and rename), with
   a signed `.bak` and a registry backup of the lock timing. A config that fails
-  verification is rejected.
+  verification is rejected (and kept as `config.json.rejected`).
 - **Strong mode.** The one-time elevated setup stores the secret in
   `HKLM\SOFTWARE\FocusLock\Security`, with an ACL that allows only SYSTEM and
   Administrators. Only the elevated enforcer can read it, so **the enforcer is the only
@@ -42,8 +42,14 @@ process can read.
 ## Consequences
 
 - In strong mode the UI must never call `Store.Save`. Every change goes through the request
-  channel, which handles one request at a time per process.
+  channel, which handles one request at a time per process. A request expires when the UI
+  stops waiting for it.
 - Anything that writes the config, including stats, has to handle `CanSign() == false`.
+- Every signer takes a cross-process lock around its read-modify-write, because in reduced
+  mode both the UI and the enforcer sign.
+- The first enforcer after strong-mode setup adopts the reduced-mode config once
+  (`MigratePending`), so settings survive the switch. Until then that config could be forged
+  with the `HKCU` secret.
 - Strong mode assumes the signed-in user is a local administrator who approves UAC.
-  Standard users get reduced mode.
+  Standard users, and approvals from another account, get reduced mode.
 - An admin can still read the secret, which is accepted and outside the threat model.

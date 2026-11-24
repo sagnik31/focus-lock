@@ -37,7 +37,9 @@ tries.
 
 - Moving the clock while the enforcer runs has no effect.
 - **Remaining gap:** kill the enforcer, go offline, and move the clock forward before the
-  task relaunches it. That takes deliberate effort and is accepted.
+  task relaunches it. That takes deliberate effort and is accepted. The enforcer
+  doesn't clear an expired lock until NTP has answered, so the lock resumes once online. Until
+  then nothing counts as locked, so lists and schedules can be edited.
 - NTP responses are trusted. Spoofing needs control of the network.
 - The app makes outbound NTP requests (UDP 123). It works without them, with weaker
   protection.

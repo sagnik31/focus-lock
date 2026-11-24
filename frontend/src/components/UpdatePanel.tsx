@@ -20,7 +20,9 @@ export function UpdatePanel({ state, onState, isLocked, onClose }: UpdatePanelPr
 
     const phase = state?.phase ?? 'idle';
     const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing';
-    const sessionActive = isLocked || !!state?.sessionActive;
+    // isLocked is polled from the backend; state.sessionActive is only as fresh
+    // as the last update event and would keep Install disabled after a session.
+    const sessionActive = isLocked;
     const canDownload = !!state?.available && !state.downloaded && !busy;
     const canInstall = !!state?.available && !!state.downloaded && !busy;
 

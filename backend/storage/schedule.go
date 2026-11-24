@@ -118,7 +118,18 @@ func clockOn(now time.Time, dayOffset int, hhmm string) time.Time {
 		h, m = t.Hour(), t.Minute()
 	}
 	y, mo, d := now.Date()
-	return time.Date(y, mo, d+dayOffset, h, m, 0, 0, now.Location())
+	end := time.Date(y, mo, d+dayOffset, h, m, 0, 0, now.Location())
+	// When the clocks go back, hhmm happens twice and time.Date picks the first,
+	// which may be over although the window is active again: use the second.
+	if !end.After(now) {
+		for later := end; later.Before(end.Add(2 * time.Hour)); {
+			later = later.Add(30 * time.Minute)
+			if later.After(now) && later.Format("15:04") == hhmm {
+				return later
+			}
+		}
+	}
+	return end
 }
 
 func dayMatches(days []string, day string) bool {

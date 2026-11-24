@@ -45,6 +45,23 @@ func TestStopFocusRefusedKeepsBlock(t *testing.T) {
 	}
 }
 
+// G37: an accepted stop must not lift the block of a live schedule window.
+func TestStopFocusKeepsScheduleBlock(t *testing.T) {
+	calls := stubUnblock(t)
+	a := signingApp(t, time.Time{})
+	day := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	a.Store.Data.Schedules = []storage.Schedule{
+		{ID: "a", Enabled: true, Days: day, StartTime: "00:00", EndTime: "12:00"},
+		{ID: "b", Enabled: true, Days: day, StartTime: "12:00", EndTime: "00:00"},
+	}
+	if err := a.Store.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.StopFocus(); err != nil || *calls != 0 {
+		t.Fatalf("err %v, hosts unblocked %d time(s)", err, *calls)
+	}
+}
+
 func TestStopFocusAfterExpiryUnblocks(t *testing.T) {
 	calls := stubUnblock(t)
 	a := signingApp(t, clock.Default.Now().Add(-time.Minute))

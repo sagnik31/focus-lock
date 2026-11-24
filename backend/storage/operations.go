@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"focus-lock/backend/blocking/hosts"
 	"sort"
 	"strings"
 	"time"
@@ -28,6 +29,10 @@ const (
 	OpForgetRecent    OpType = "forget_recent_site"
 	OpSaveSiteGroups  OpType = "save_site_groups"
 )
+
+// MaxFocusSeconds is the longest manual lock (365 days). Much longer ones would
+// overflow a time.Duration. FocusUntil.tsx uses the same limit.
+const MaxFocusSeconds = 365 * 24 * 60 * 60
 
 // maxRecentSites caps the "Recently used" history kept in the config.
 const maxRecentSites = 20
@@ -61,6 +66,12 @@ func EnforcementActive(cfg *Config, now time.Time) bool {
 	return ManualLockActive(cfg, now) || SchedulesActiveAt(cfg.Schedules, now)
 }
 
+// Enforcing reports whether blocking must be applied right now: something is
+// being enforced and no emergency pause is running.
+func Enforcing(cfg *Config, now time.Time) bool {
+	return EnforcementActive(cfg, now) && !now.Before(cfg.PausedUntil)
+}
+
 // ApplyOperation is the single source of truth for every config mutation.
 // It validates the operation against the lock-integrity policy and, if
 // allowed, mutates cfg in place. A non-nil error means the operation was
@@ -90,11 +101,20 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		if ManualLockActive(cfg, now) {
 			return errors.New("cannot stop an active focus session")
 		}
+		recordManualSession(cfg, now) // no-op if the enforcer already did
 		cfg.LockEndTime = time.Time{}
 		cfg.RemainingDuration = 0
 		return nil
 
 	case OpEmergencyUnlock:
+		// An idle pause would carry over into a lock started right after it.
+		if !locked {
+			return errors.New("there is no active focus session to pause")
+		}
+		// A second click must not spend the other unlock on the same pause.
+		if now.Before(cfg.PausedUntil) {
+			return nil
+		}
 		// Refill the quota if a new schedule window has become active since it
 		// was last tied to one. Manual sessions refill in applyStartFocus; this
 		// covers recurring schedule windows, which otherwise never refilled.
@@ -110,6 +130,9 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		name := strings.TrimSpace(op.Name)
 		if name == "" {
 			return errors.New("app name cannot be empty")
+		}
+		if ProtectedApp(name) {
+			return errors.New("\"" + name + "\" can't be blocked: Windows or Focus Lock needs it to run")
 		}
 		if !ValidAppName(name) {
 			return errors.New("\"" + name + "\" is not a valid app name; use the program's .exe name")
@@ -128,9 +151,9 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 	case OpSetApps:
 		// Wholesale replace. During a lock this may only ADD: the new set
 		// must contain every currently blocked app, or it is a removal.
-		// Invalid names (e.g. "." from an app with no resolved exe) are
-		// dropped: they never blocked anything useful, so dropping one is
-		// not a weakening and is allowed even mid-lock.
+		// Invalid names (e.g. "." from an app with no resolved exe) and
+		// protected ones are dropped: they never blocked anything useful, so
+		// dropping one is not a weakening and is allowed even mid-lock.
 		apps := ValidApps(op.Apps)
 		if locked && !isSuperset(apps, ValidApps(cfg.BlockedApps)) {
 			return errors.New("cannot remove apps during an active focus session")
@@ -140,14 +163,20 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 		return nil
 
 	case OpAddSite:
-		cfg.BlockedSites = addUnique(cfg.BlockedSites, op.URL)
+		if err := checkSites(op.URL); err != nil {
+			return err
+		}
+		cfg.BlockedSites = addUnique(cfg.BlockedSites, strings.TrimSpace(op.URL))
 		sort.Strings(cfg.BlockedSites)
 		touchRecent(cfg, op.URL)
 		return nil
 
 	case OpAddSites:
+		if err := checkSites(op.Sites...); err != nil {
+			return err
+		}
 		for _, s := range op.Sites {
-			cfg.BlockedSites = addUnique(cfg.BlockedSites, s)
+			cfg.BlockedSites = addUnique(cfg.BlockedSites, strings.TrimSpace(s))
 		}
 		sort.Strings(cfg.BlockedSites)
 		touchRecent(cfg, op.Sites...)
@@ -199,18 +228,20 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 			}
 			imported = append(imported, ns)
 		}
+		if err := mergeSiteGroups(cfg, op.SiteGroups); err != nil {
+			return err // also before anything else changes
+		}
 		for _, a := range ValidApps(op.Apps) {
 			cfg.BlockedApps = addUnique(cfg.BlockedApps, a)
 		}
 		sort.Strings(cfg.BlockedApps)
 		for _, s := range op.Sites {
-			cfg.BlockedSites = addUnique(cfg.BlockedSites, s)
+			if hosts.ValidSite(s) { // like invalid apps, others are skipped
+				cfg.BlockedSites = addUnique(cfg.BlockedSites, strings.TrimSpace(s))
+			}
 		}
 		sort.Strings(cfg.BlockedSites)
 		cfg.Schedules = append(cfg.Schedules, imported...)
-		if err := mergeSiteGroups(cfg, op.SiteGroups); err != nil {
-			return err
-		}
 		mergeRecent(cfg, op.RecentSites)
 		return nil
 
@@ -247,9 +278,22 @@ func ApplyOperation(cfg *Config, op Operation, now time.Time) error {
 	}
 }
 
+// checkSites refuses entries that no blocking layer could act on.
+func checkSites(sites ...string) error {
+	for _, s := range sites {
+		if !hosts.ValidSite(s) {
+			return errors.New("\"" + strings.TrimSpace(s) + "\" is not a website address; use a form like example.com")
+		}
+	}
+	return nil
+}
+
 func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 	if op.Seconds <= 0 {
 		return errors.New("duration must be positive")
+	}
+	if op.Seconds > MaxFocusSeconds {
+		return errors.New("a focus session can last at most 365 days")
 	}
 	newEnd := now.Add(time.Duration(op.Seconds) * time.Second)
 
@@ -261,7 +305,11 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 			cfg.RemainingDuration = newEnd.Sub(now)
 		}
 	} else {
-		// Fresh lock.
+		// Fresh lock. An expired one that wasn't cleaned up yet (the enforcer
+		// waits for trusted time) still belongs in the history, and a pause
+		// never carries over.
+		recordManualSession(cfg, now)
+		cfg.PausedUntil = time.Time{}
 		cfg.LockEndTime = newEnd
 		cfg.RemainingDuration = time.Duration(op.Seconds) * time.Second
 		// A new manual session gets a fresh unlock quota, but not while a

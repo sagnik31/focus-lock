@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,6 +36,7 @@ type Config struct {
 	SessionStart         time.Time     `json:"session_start"`          // Start of the current manual session (zero if none); used to record history on end
 	ScheduleUnlockWindow string        `json:"schedule_unlock_window"` // Key of the schedule window the emergency-unlock quota is tied to; a set sharing no window with it refills the quota (see applyScheduleUnlockReset)
 	ScheduleSessionStart time.Time     `json:"schedule_session_start"` // Start of the in-progress schedule-driven session (zero if none); recorded to history on its falling edge (see UpdateScheduleSession)
+	ScheduleSessionEnd   time.Time     `json:"schedule_session_end"`   // When that session's windows end; caps its recorded end if the PC was off then
 	RecentSites          []string      `json:"recent_sites"`           // Sites the user has blocked, most recent first (capped); powers the "Recently used" list
 	SiteGroups           []SiteGroup   `json:"site_groups"`            // User-defined website sections, shown above the built-in suggestions
 }
@@ -106,6 +107,13 @@ type Store struct {
 	// is not, so loadInternal trusts it first (see loadSecure).
 	secureDir string
 
+	// legacySecret is the reduced-mode (HKCU) secret, set only for the first
+	// strong-mode signer after setup (migratePending): the existing config is
+	// still signed with it, so loadInternal adopts and re-signs that config
+	// (see adoptLegacy). Both are cleared by the first successful save.
+	legacySecret   []byte
+	migratePending bool
+
 	// ownWrite is config.json's modification time right after this Store's
 	// last successful save. The enforcer compares it with the file's current
 	// mtime to tell its own routine writes (remaining time, stats) from
@@ -128,6 +136,25 @@ func (s *Store) CanSign() bool { return s.canSign }
 // StrongMode reports whether the HKLM secret has been provisioned.
 func (s *Store) StrongMode() bool { return s.strong }
 
+func defaultConfig() Config {
+	return Config{
+		BlockedApps: []string{},
+		Stats: Stats{
+			KillCounts: make(map[string]int),
+		},
+		BlockedSites:   []string{},
+		BlockCommonVPN: true,
+	}
+}
+
+// decodeConfig decodes a whole config over the defaults. It never decodes over
+// a previous config, which would keep map entries the new one doesn't have.
+func decodeConfig(data []byte) (Config, error) {
+	cfg := defaultConfig()
+	err := json.Unmarshal(data, &cfg)
+	return cfg, err
+}
+
 func NewStore() (*Store, error) {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
@@ -141,14 +168,7 @@ func NewStore() (*Store, error) {
 
 	store := &Store{
 		filePath: filepath.Join(dir, "config.json"),
-		Data: Config{
-			BlockedApps: []string{},
-			Stats: Stats{
-				KillCounts: make(map[string]int),
-			},
-			BlockedSites:   []string{},
-			BlockCommonVPN: true,
-		},
+		Data:     defaultConfig(),
 		regStore: NewRegistryStore(),
 	}
 
@@ -161,14 +181,49 @@ func NewStore() (*Store, error) {
 	store.canSign = canSign
 	if strong && canSign {
 		store.secureDir = secureBackupDir()
+		if store.regStore.MigratePending() {
+			store.migratePending = true
+			store.legacySecret = store.regStore.LegacySecret()
+		}
 	}
 
 	return store, nil
 }
 
-func (s *Store) Load() error {
+// SecureDir returns the admin-only folder of the strong-mode signer, or "".
+func (s *Store) SecureDir() string { return s.secureDir }
+
+// lockConfig takes the store lock and, for a signer, the cross-process config
+// lock, and returns the function that releases both. In reduced mode the UI
+// and the enforcer are separate processes that both write the config; without
+// this, one could load, the other commit a lock, and the first save over it
+// (or a load could see a new config.json with the old signature and roll it
+// back). Every read-modify-write, and every load that may heal, goes through it.
+//
+// The strong-mode lock file is in the admin-only folder, so a non-elevated
+// process can't hold it to stall the enforcer. Waiting is bounded either way.
+func (s *Store) lockConfig() (unlock func()) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	path := ""
+	switch {
+	case !s.canSign:
+	case s.secureDir != "":
+		path = filepath.Join(s.secureDir, "config.lock")
+	case !s.strong:
+		path = s.filePath + ".lock"
+	}
+	release := func() {}
+	if path != "" {
+		release = lockFile(path, 2*time.Second)
+	}
+	return func() {
+		release()
+		s.mu.Unlock()
+	}
+}
+
+func (s *Store) Load() error {
+	defer s.lockConfig()()
 
 	return s.loadInternal()
 }
@@ -197,7 +252,9 @@ func (s *Store) loadInternal() error {
 	// authority that verifies, heals and signs the config.
 	if !s.canSign {
 		if err == nil {
-			_ = json.Unmarshal(data, &s.Data)
+			if cfg, err := decodeConfig(data); err == nil {
+				s.Data = cfg
+			}
 		}
 		return nil
 	}
@@ -225,10 +282,19 @@ func (s *Store) loadInternal() error {
 		}
 
 		if !corrupt {
-			if jsonErr := json.Unmarshal(data, &s.Data); jsonErr != nil {
+			if cfg, jsonErr := decodeConfig(data); jsonErr != nil {
 				corrupt = true
+			} else {
+				s.Data = cfg
 			}
 		}
+	}
+
+	// 2b. First strong-mode load after setup: the config is still signed with
+	//     the reduced-mode secret. Adopt it instead of treating it as tampered.
+	if (fileMissing || corrupt) && s.adoptLegacy(data, err == nil) {
+		_ = s.saveInternal()
+		return nil
 	}
 
 	// 3. Redundancy / Restore Logic
@@ -241,6 +307,17 @@ func (s *Store) loadInternal() error {
 		//     take the lock (we already hold it), so calling it here is safe.
 		if s.restoreFromBackup() {
 			_ = s.saveInternal()
+			return nil
+		}
+
+		// Nothing verifies: the next save will replace this file, so keep a copy.
+		if corrupt {
+			s.keepRejected(data)
+		}
+		if s.regStore == nil { // unit tests only
+			if corrupt {
+				return errConfigCorrupt
+			}
 			return nil
 		}
 
@@ -263,7 +340,7 @@ func (s *Store) loadInternal() error {
 		}
 
 		if corrupt {
-			return fmt.Errorf("config corrupted and no backup found")
+			return errConfigCorrupt
 		}
 		// If just missing and no backup, return defaults (fresh start)
 		return nil
@@ -277,8 +354,7 @@ func (s *Store) loadInternal() error {
 // and avoids race conditions where the UI updates the config while the
 // watchdog is calculating time.
 func (s *Store) UpdateAtomic(updater func(*Config)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 
 	// 1. Load latest state from disk (ignore error to allow defaults/recovery)
 	_ = s.loadInternal()
@@ -317,8 +393,7 @@ func cloneSlice[T any](src []T) []T {
 }
 
 func (s *Store) Save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	return s.saveInternal()
 }
 
@@ -327,16 +402,24 @@ func (s *Store) Save() error {
 // would weaken an active lock), and signs+saves if allowed. The returned error
 // is the policy verdict, relayed to the UI through the result file.
 func (s *Store) ApplyRequest(op Operation, now time.Time) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 
 	_ = s.loadInternal()
+	prev := s.Data
 	if err := ApplyOperation(&s.Data, op, now); err != nil {
 		return err
 	}
-	return s.saveInternal()
+	if err := s.saveInternal(); err != nil {
+		s.Data = prev // not committed
+		return err
+	}
+	return nil
 }
 
+// saveInternal signs and writes the config. It returns an error only when the
+// config was not committed: once the copy the next load trusts first is in
+// place, a failure to write the others must not be reported as a failed save
+// (the UI would say a lock didn't start when it did).
 func (s *Store) saveInternal() error {
 	// In strong mode only the elevated Ghost (which holds the secret) may
 	// write the config. A UI save here would be unsigned garbage, so refuse it
@@ -355,9 +438,12 @@ func (s *Store) saveInternal() error {
 	// 0. The admin-only copy first (strong-mode signer only; see loadSecure).
 	//    If it can't be written, remove it: a stale secure copy would be
 	//    preferred over this newer save on the next load and undo it.
+	secured := false
 	if s.secureDir != "" {
 		sp := s.securePath()
+		secured = true
 		if atomicWrite(sp, data) != nil || atomicWrite(sp+".sig", []byte(sig)) != nil {
+			secured = false
 			_ = os.Remove(sp)
 			_ = os.Remove(sp + ".sig")
 		}
@@ -368,14 +454,22 @@ func (s *Store) saveInternal() error {
 	//    config.json. Without this, an unclean shutdown corrupts the file, the
 	//    next load falls back to the timing-only registry backup, and the block
 	//    lists are lost while the lock still shows active.
-	if err := atomicWrite(s.filePath, data); err != nil {
+	//    With a secure copy in place a failure here heals on the next load.
+	if err := atomicWrite(s.filePath, data); err != nil && !secured {
 		return err
 	}
-	if err := atomicWrite(s.filePath+".sig", []byte(sig)); err != nil {
+	if err := atomicWrite(s.filePath+".sig", []byte(sig)); err != nil && !secured {
 		return err
 	}
 	if info, err := os.Stat(s.filePath); err == nil {
 		s.ownWrite = info.ModTime()
+	}
+
+	// The config is now signed with the current secret; from here on a
+	// reduced-mode (user-readable) one must not be accepted.
+	s.legacySecret = nil
+	if s.migratePending && s.regStore != nil && s.regStore.ClearMigratePending() == nil {
+		s.migratePending = false
 	}
 
 	// 2. Full redundant backup (config + its signature). Written after the
@@ -392,7 +486,45 @@ func (s *Store) saveInternal() error {
 	if s.regStore == nil {
 		return nil
 	}
-	return s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration, s.Data.PausedUntil)
+	_ = s.regStore.SaveBackup(s.Data.LockEndTime, s.Data.RemainingDuration, s.Data.PausedUntil)
+	return nil
+}
+
+var errConfigCorrupt = errors.New("config corrupted and no backup found")
+
+// adoptLegacy loads a config (or its .bak) signed with the reduced-mode
+// secret. It only does anything for the first signer after strong-mode setup
+// (see legacySecret); the caller re-signs what it loaded.
+func (s *Store) adoptLegacy(primary []byte, havePrimary bool) bool {
+	if len(s.legacySecret) == 0 {
+		return false
+	}
+	try := func(data []byte, sigPath string) bool {
+		sig, err := os.ReadFile(sigPath)
+		if err != nil || !hmac.Equal([]byte(hmacHex(s.legacySecret, data)), sig) {
+			return false
+		}
+		cfg, err := decodeConfig(data)
+		if err != nil {
+			return false
+		}
+		s.Data = cfg
+		return true
+	}
+	if havePrimary && try(primary, s.filePath+".sig") {
+		return true
+	}
+	bak, err := os.ReadFile(s.filePath + ".bak")
+	return err == nil && try(bak, s.filePath+".bak.sig")
+}
+
+// keepRejected keeps a copy of a config that failed verification.
+func (s *Store) keepRejected(data []byte) {
+	path := s.filePath + ".rejected"
+	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, data) {
+		return
+	}
+	_ = atomicWrite(path, data)
 }
 
 // atomicWrite writes data to a temp file in the same directory, flushes it to
@@ -450,8 +582,8 @@ func (s *Store) loadSecure(primary []byte, havePrimary bool) bool {
 	if err != nil || s.computeHMAC(sdata) != string(ssig) {
 		return false
 	}
-	var cfg Config
-	if err := json.Unmarshal(sdata, &cfg); err != nil {
+	cfg, err := decodeConfig(sdata)
+	if err != nil {
 		return false
 	}
 	s.Data = cfg
@@ -479,8 +611,8 @@ func (s *Store) restoreFromBackup() bool {
 	if s.computeHMAC(bdata) != string(bsig) {
 		return false
 	}
-	var restored Config
-	if err := json.Unmarshal(bdata, &restored); err != nil {
+	restored, err := decodeConfig(bdata)
+	if err != nil {
 		return false
 	}
 	s.Data = restored
@@ -491,25 +623,28 @@ func (s *Store) computeHMAC(data []byte) string {
 	if len(s.activeSecret) == 0 {
 		return ""
 	}
-	h := hmac.New(sha256.New, s.activeSecret)
+	return hmacHex(s.activeSecret, data)
+}
+
+func hmacHex(secret, data []byte) string {
+	h := hmac.New(sha256.New, secret)
 	h.Write(data)
 	return hex.EncodeToString(h.Sum(nil))
 }
-func (s *Store) UpdateBlockedStats(apps []string, durationSec int) {
-	s.mu.Lock()
-	if s.Data.Stats.BlockedFrequency == nil {
-		s.Data.Stats.BlockedFrequency = make(map[string]int)
-	}
-	if s.Data.Stats.BlockedDuration == nil {
-		s.Data.Stats.BlockedDuration = make(map[string]int64)
-	}
 
-	for _, app := range apps {
-		s.Data.Stats.BlockedFrequency[app]++
-		s.Data.Stats.BlockedDuration[app] += int64(durationSec)
-	}
-	s.mu.Unlock()
-	s.Save()
+func (s *Store) UpdateBlockedStats(apps []string, durationSec int) {
+	_ = s.UpdateAtomic(func(cfg *Config) {
+		if cfg.Stats.BlockedFrequency == nil {
+			cfg.Stats.BlockedFrequency = make(map[string]int)
+		}
+		if cfg.Stats.BlockedDuration == nil {
+			cfg.Stats.BlockedDuration = make(map[string]int64)
+		}
+		for _, app := range apps {
+			cfg.Stats.BlockedFrequency[app]++
+			cfg.Stats.BlockedDuration[app] += int64(durationSec)
+		}
+	})
 }
 
 func (s *Store) GetBlockedDuration() map[string]int64 {
@@ -558,8 +693,7 @@ func (s *Store) SetHostsBlockError(err error) {
 	if !s.canSign {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
 
 	cur := s.Data.LastEnforcementError

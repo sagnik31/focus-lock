@@ -14,14 +14,16 @@ with offline support can load from cache.
 
 - **`hosts` file as the base layer.** During a session, blocked domains and their common
   subdomains (`www.`, `m.` and known popular-site hosts, matched on a dot boundary) are
-  written between `#### FOCUS LOCK ####` markers, then DNS is flushed. Everything outside
-  the markers is left alone.
+  written between a start and an end marker, then DNS is flushed. Everything outside the
+  markers is left alone, also when the end marker is missing.
 - **Chrome `URLBlocklist` policy as a second layer.** During a session the same sites are
   written to `HKLM\SOFTWARE\Policies\Google\Chrome\URLBlocklist`. Focus Lock records which
   entries it owns and removes only those when the session ends. Entries the user already
   had stay.
 - **Leave Secure DNS alone.** The policy layer covers it, so there's no need to change the
   user's DNS settings.
+- Both layers block the whole site for an address with a leading `www.`, and entries without
+  a usable host name are refused.
 - Both layers are reapplied every five seconds by the enforcer, so manual edits are undone.
 
 ## Alternatives considered

@@ -6,7 +6,7 @@
 ## Context
 
 Installing Focus Lock does elevated, one-time work: the scheduled task, the HKLM secret,
-Defender exclusions and the `%ProgramData%` folder. Users should install once and then
+the Defender exclusion and the `%ProgramData%` folder. Users should install once and then
 receive fixes without reinstalling by hand. Releases shouldn't depend on someone
 remembering to bump a version. An update must also never become a way out of a session,
 since an install stops the enforcer.
@@ -14,7 +14,7 @@ since an install stops the enforcer.
 ## Decision
 
 - **Weekly, automatic releases.** A GitHub Actions workflow runs every Sunday (and on
-  demand) from `main`. It skips weeks with no new commits, runs the checks (originally
+  demand) from `main` only. It skips weeks with no new commits, runs the checks (originally
   `go vet`, `go test` and the frontend typecheck; now the same gate as CI), builds the
   installer, and publishes a GitHub Release. If the gate fails, there's no release.
 - **Calendar versions** `YYYY.M.D.N` (tag `vYYYY.M.D.N`). They always increase, need no
@@ -27,7 +27,8 @@ since an install stops the enforcer.
   replace the exe, re-register the task and restart. There's no self-replacing exe.
 - **No install during a session.** Checking and downloading are always allowed. Installing
   is refused by the app's backend and by the installer, which runs
-  `focus-lock.exe --session-active` and aborts when it exits 3.
+  `focus-lock.exe --session-active` and aborts when it exits 3. When the state can't be read,
+  in-app updates are refused too, but Setup run by hand continues so it can repair an install.
 - **No code signing for now**, because of the cost. The checksum provides integrity.
 
 ## Alternatives considered

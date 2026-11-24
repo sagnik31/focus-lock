@@ -7,6 +7,9 @@ interface FocusUntilProps {
     onStart: (untilMs: number) => void;
 }
 
+// Same limit as storage.MaxFocusSeconds.
+const MAX_SECONDS = 365 * 24 * 60 * 60;
+
 const pad = (n: number) => n.toString().padStart(2, '0');
 const toDateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const toTimeInput = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -39,7 +42,8 @@ export const FocusUntil: React.FC<FocusUntilProps> = ({ onStart }) => {
 
     const seconds = target ? Math.floor((target.getTime() - now) / 1000) : 0;
     const inPast = target !== null && seconds <= 0;
-    const valid = target !== null && seconds >= 60;
+    const tooFar = seconds > MAX_SECONDS;
+    const valid = target !== null && seconds >= 60 && !tooFar;
 
     return (
         <div className="w-full h-full flex flex-col items-center justify-center px-6 pt-10 pb-4 gap-4">
@@ -81,6 +85,8 @@ export const FocusUntil: React.FC<FocusUntilProps> = ({ onStart }) => {
                         </div>
                         <div className="text-xs text-slate-400">{formatDuration(seconds)} from now</div>
                     </div>
+                ) : tooFar ? (
+                    <p className="text-xs text-slate-400">Choose a time within the next 365 days.</p>
                 ) : target ? (
                     <p className="text-xs text-slate-400">Choose a time at least a minute from now.</p>
                 ) : (

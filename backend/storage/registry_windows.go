@@ -21,6 +21,7 @@ const (
 
 	keySecret      = "SecretKey"
 	keyProvisioned = "Provisioned"
+	keyMigrate     = "MigratePending" // set by setup; see Store.legacySecret
 	keyLockEnd     = "LockEndTime"
 	keyRemDur      = "RemainingDuration"
 	keyPausedUse   = "PausedUntil"
@@ -68,6 +69,48 @@ func (r *RegistryStore) ResolveSecret() (secret []byte, strong bool, canSign boo
 	r.strong = false
 	b, _ := r.getOrCreateHKCUSecret()
 	return b, false, true
+}
+
+// MigratePending reports whether setup has just moved this PC to strong mode
+// and no config has been signed with the new secret yet. Only administrators
+// can set the marker.
+func (r *RegistryStore) MigratePending() bool {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, baseSubkey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer k.Close()
+	v, _, err := k.GetIntegerValue(keyMigrate)
+	return err == nil && v == 1
+}
+
+// ClearMigratePending removes the marker (elevated signer only).
+func (r *RegistryStore) ClearMigratePending() error {
+	k, err := registry.OpenKey(registry.LOCAL_MACHINE, baseSubkey, registry.SET_VALUE)
+	if err != nil {
+		return err
+	}
+	defer k.Close()
+	return k.DeleteValue(keyMigrate)
+}
+
+// LegacySecret returns the per-user reduced-mode secret, or nil. Unlike
+// getOrCreateHKCUSecret it never creates one.
+func (r *RegistryStore) LegacySecret() []byte {
+	k, err := registry.OpenKey(registry.CURRENT_USER, baseSubkey, registry.QUERY_VALUE)
+	if err != nil {
+		return nil
+	}
+	defer k.Close()
+	val, _, err := k.GetStringValue(keySecret)
+	if err != nil {
+		return nil
+	}
+	b, err := hex.DecodeString(val)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // getOrCreateHKCUSecret retrieves or creates the legacy per-user HMAC secret.

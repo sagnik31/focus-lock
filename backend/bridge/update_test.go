@@ -242,6 +242,19 @@ func TestInstallUpdateIgnoresEarlierTaskRun(t *testing.T) {
 	}
 }
 
+// G39: the app stays open until Setup closes it, and says so if it never does.
+func TestInstallUpdateReportsSetupThatStopped(t *testing.T) {
+	prev := setupCloseTimeout
+	setupCloseTimeout = 5 * time.Millisecond
+	t.Cleanup(func() { setupCloseTimeout = prev })
+	a, m := readyApp(t)
+	stubInstall(t, errors.New("task not found"), nil)
+	a.InstallUpdate()
+	if st := waitPhase(t, a, m, phaseReady); !strings.Contains(st.Error, "did not go ahead") {
+		t.Fatalf("state: %+v", st)
+	}
+}
+
 func TestInstallUpdateFallsBackToUAC(t *testing.T) {
 	a, m := readyApp(t)
 	launched := stubInstall(t, errors.New("task not found"), nil)

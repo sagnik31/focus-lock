@@ -55,13 +55,15 @@ func (a *App) Startup(ctx context.Context) {
 	// running; everything else is driven through the request channel.
 	if !a.Store.CanSign() {
 		a.clearLocalWarning()
-		if !ghostRunning() {
-			currentExe, err := os.Executable()
-			if err == nil {
-				err = spawnEnforcer(currentExe, scheduler.EnforcerTaskName)
-			}
-			a.warnEnforcement("Enforcement process failed to start", err)
+		startClock() // StartEnforcer does this in reduced mode
+		// Always ask the task to run: it ignores the request while the
+		// enforcer is alive, and any process could hold a mutex that only
+		// looks like the enforcer's.
+		currentExe, err := os.Executable()
+		if err == nil {
+			err = spawnEnforcer(currentExe, scheduler.EnforcerTaskName)
 		}
+		a.warnEnforcement("Enforcement process failed to start", err)
 		return
 	}
 
@@ -80,22 +82,27 @@ func (a *App) Startup(ctx context.Context) {
 	if !manualActive && !scheduleActive && !hasEnabledSchedules {
 		// No active lock and no enabled schedules. Force cleanup.
 		_ = hosts.Unblock()
-		save := false
+		clearWarning, clearTask := false, false
 		// Nothing is being enforced, so any enforcement warning is stale (it was
 		// written during a past session). Clear it, otherwise the UI keeps showing
 		// a leftover banner between sessions even though nothing is wrong now.
 		if a.Store.Data.LastEnforcementError != "" {
-			a.Store.Data.LastEnforcementError = ""
-			save = true
+			clearWarning = true
 		}
 		if a.Store.Data.GhostTaskName != "" {
 			_ = scheduler.DisablePersistence(a.Store.Data.GhostTaskName)
-			a.Store.Data.GhostTaskName = ""
-			a.Store.Data.GhostExePath = ""
-			save = true
+			clearTask = true
 		}
-		if save {
-			a.Store.Save()
+		if clearWarning || clearTask {
+			_ = a.Store.UpdateAtomic(func(cfg *storage.Config) {
+				if clearWarning {
+					cfg.LastEnforcementError = ""
+				}
+				if clearTask {
+					cfg.GhostTaskName = ""
+					cfg.GhostExePath = ""
+				}
+			})
 		}
 	} else {
 		// There is something to enforce now (an active manual lock or an active
@@ -109,10 +116,11 @@ func (a *App) Startup(ctx context.Context) {
 			currentExe, err := os.Executable()
 			if err == nil {
 				taskName := scheduler.EnforcerTaskName
-				a.Store.Data.GhostTaskName = taskName
-				a.Store.Data.GhostExePath = currentExe
-				a.Store.Data.LastEnforcementError = ""
-				a.Store.Save()
+				_ = a.Store.UpdateAtomic(func(cfg *storage.Config) {
+					cfg.GhostTaskName = taskName
+					cfg.GhostExePath = currentExe
+					cfg.LastEnforcementError = ""
+				})
 				// Only (re-)register when a correct task isn't already installed:
 				// the non-elevated UI can't overwrite one, so attempting it would
 				// just fail with "Access is denied".
@@ -140,6 +148,7 @@ func (a *App) GetConfig() storage.Config {
 var (
 	spawnEnforcer = spawnGhost
 	ghostRunning  = isGhostProcessRunning
+	startClock    = func() { clock.Default.Start(5*time.Minute, nil) }
 )
 
 // GetNow returns the enforcer's trusted time as Unix milliseconds. The frontend

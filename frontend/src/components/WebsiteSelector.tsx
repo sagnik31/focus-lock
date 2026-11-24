@@ -167,6 +167,7 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
     onSaveGroups,
 }) => {
     const [input, setInput] = useState("");
+    const [groupError, setGroupError] = useState("");
     // null = no editor open; 'new' = creating; otherwise the id being edited.
     const [editing, setEditing] = useState<string | null>(null);
 
@@ -200,7 +201,8 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
     };
 
     const deleteGroup = (id: string) => {
-        onSaveGroups(siteGroups.filter(g => g.id !== id)).catch(() => { /* error surfaced by parent */ });
+        setGroupError("");
+        onSaveGroups(siteGroups.filter(g => g.id !== id)).catch((e) => setGroupError("Could not delete the group: " + String(e)));
     };
 
     const recent = recentSites.filter(s => !sites.includes(s)).slice(0, RECENT_LIMIT);
@@ -254,6 +256,8 @@ export const WebsiteSelector: React.FC<WebsiteSelectorProps> = ({
                     {editing === 'new' && (
                         <GroupEditor onSave={(n, s) => saveGroup(null, n, s)} onCancel={() => setEditing(null)} />
                     )}
+
+                    {groupError && <p role="alert" className="text-xs text-red-300">{groupError}</p>}
 
                     {siteGroups.length === 0 && editing !== 'new' && (
                         <p className="text-xs text-slate-500">

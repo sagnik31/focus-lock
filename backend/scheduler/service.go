@@ -24,8 +24,10 @@ const EnforcerTaskName = "FocusLock Enforcer"
 //     the computer switches to battery power" terminates the Ghost when AC power
 //     is lost, and the implicit 72h execution limit does the same after 3 days.
 //
-//  2. A repetition trigger. The logon trigger repeats every minute forever, so
-//     Task Scheduler re-runs the action every minute. MultipleInstancesPolicy
+//  2. A repetition trigger. A time trigger in the past repeats every minute
+//     forever, so it is live as soon as the task is registered. (The logon
+//     trigger's own repetition only starts at the next sign-in, which left a
+//     fresh install or update without recovery until then.) Task Scheduler re-runs the action every minute. MultipleInstancesPolicy
 //     IgnoreNew means that while the Ghost is alive the repeat is a no-op, but if
 //     the Ghost is killed the next repeat relaunches it within ~1 minute. This is
 //     what makes killing the Ghost pointless rather than a bypass: enforcement
@@ -41,6 +43,14 @@ const taskXMLTemplate = `<?xml version="1.0" encoding="UTF-16"?>
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
     </LogonTrigger>
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -84,13 +94,22 @@ func EnablePersistence(exePath, taskName string) error {
 	}
 	defer os.Remove(f.Name())
 
-	_, err = f.Write(encodeUTF16LE(fmt.Sprintf(taskXMLTemplate, xmlEscape(u.Uid), xmlEscape(exePath))))
+	content := encodeUTF16LE(fmt.Sprintf(taskXMLTemplate, xmlEscape(u.Uid), xmlEscape(exePath)))
+	_, err = f.Write(content)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		return err
 	}
+
+	// The file is in a user-writable folder: keep it open so that nothing can
+	// change or replace it before schtasks has read it.
+	release, err := holdFile(f.Name(), content)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	// Capture stderr so a failure reports schtasks's actual message (e.g.
 	// "ERROR: Access is denied." when the UI isn't elevated) instead of a bare
@@ -135,6 +154,10 @@ func PersistenceCurrent(exePath, taskName string) bool {
 		return false
 	}
 	if !strings.Contains(x, "<repetition>") {
+		return false
+	}
+	// Older tasks repeat only after a sign-in (see taskXMLTemplate).
+	if !strings.Contains(x, "<timetrigger>") {
 		return false
 	}
 	// The action must point at the current enforcer exe, so a task left over

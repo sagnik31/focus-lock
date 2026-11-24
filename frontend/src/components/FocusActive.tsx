@@ -27,6 +27,7 @@ interface FocusActiveProps {
 export function FocusActive({ endTime, blockedApps, blockedSites, appMap, pausedUntil, isSchedule, emergencyUnlocksUsed, onShowSettings, onQuit, enforcementError, error, onDismissError, nowOffsetMs = 0, updateDownloaded }: FocusActiveProps) {
     const [timeLeft, setTimeLeft] = useState(0);
     const [pauseLeft, setPauseLeft] = useState(0);
+    const [unlocking, setUnlocking] = useState(false);
     const [unlockError, setUnlockError] = useState("");
 
     const calculateTime = () => {
@@ -58,6 +59,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
     }, [endTime, pausedUntil, nowOffsetMs]);
 
     const handleEmergencyUnlock = async () => {
+        setUnlocking(true);
         try {
             await EmergencyUnlock();
             setUnlockError("");
@@ -65,6 +67,8 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
         } catch (e) {
             console.error("Failed to emergency unlock:", e);
             setUnlockError("Emergency unlock failed: " + String(e));
+        } finally {
+            setUnlocking(false);
         }
     };
 
@@ -152,7 +156,7 @@ export function FocusActive({ endTime, blockedApps, blockedSites, appMap, paused
                             <div className="pt-8 text-center space-y-2">
                                 <button
                                     onClick={handleEmergencyUnlock}
-                                    disabled={emergencyUnlocksUsed >= 2}
+                                    disabled={unlocking || emergencyUnlocksUsed >= 2}
                                     className={`px-6 py-2 rounded-lg transition-all text-sm font-medium flex items-center gap-2 mx-auto ${emergencyUnlocksUsed >= 2
                                         ? 'bg-slate-700/50 text-slate-500 cursor-not-allowed border border-slate-700'
                                         : 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 hover:scale-105 active:scale-95'

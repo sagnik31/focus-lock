@@ -96,6 +96,7 @@ func TestEmergencyUnlockLimit(t *testing.T) {
 		if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, now); err != nil {
 			t.Fatalf("unlock %d should succeed: %v", i, err)
 		}
+		cfg.PausedUntil = time.Time{} // the pause is over
 	}
 	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, now); err == nil {
 		t.Error("third emergency unlock must be refused")
@@ -114,6 +115,7 @@ func TestEmergencyUnlockRefillsPerScheduleWindow(t *testing.T) {
 		if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week1); err != nil {
 			t.Fatalf("unlock %d in the first window should succeed: %v", i, err)
 		}
+		cfg.PausedUntil = time.Time{} // the pause is over
 	}
 	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week1); err == nil {
 		t.Fatal("a third unlock within the same schedule window must be refused")
@@ -129,9 +131,11 @@ func TestEmergencyUnlockRefillsPerScheduleWindow(t *testing.T) {
 	}
 
 	// Still only two per window: a fresh occurrence does not grant unlimited unlocks.
+	cfg.PausedUntil = time.Time{}
 	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week2); err != nil {
 		t.Fatalf("second unlock in the new window should succeed: %v", err)
 	}
+	cfg.PausedUntil = time.Time{}
 	if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, week2); err == nil {
 		t.Error("a third unlock in the new window must be refused")
 	}
@@ -156,6 +160,7 @@ func TestAddingActiveScheduleDoesNotRefillUnlocks(t *testing.T) {
 				if err := ApplyOperation(cfg, unlock, now); err != nil {
 					t.Fatal(err)
 				}
+				cfg.PausedUntil = time.Time{}
 			}
 			if err := ApplyOperation(cfg, op, now); err != nil {
 				t.Fatal(err)

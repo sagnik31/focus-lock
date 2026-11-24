@@ -75,6 +75,14 @@ $xml = @"
         <StopAtDurationEnd>false</StopAtDurationEnd>
       </Repetition>
     </LogonTrigger>
+    <TimeTrigger>
+      <Repetition>
+        <Interval>PT1M</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2026-01-01T00:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -103,18 +111,6 @@ $xml = @"
 </Task>
 "@
 
-$tmp = Join-Path $env:TEMP 'focuslock-task.xml'
-[System.IO.File]::WriteAllText($tmp, $xml, [System.Text.Encoding]::Unicode)
-try {
-    & schtasks /create /tn $taskName /xml $tmp /f
-    if ($LASTEXITCODE -ne 0) { throw "schtasks exited with code $LASTEXITCODE" }
-    Write-Host "[setup] Registered '$taskName' (battery-safe, 1-min auto-relaunch)." -ForegroundColor Green
-    Write-Host "[setup] Reboot to start the new enforcer and clear the old one." -ForegroundColor Cyan
-}
-finally {
-    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-}
-
 # --- Strong-mode secret provisioning ---------------------------------------
 # Store the HMAC secret where the enforced user cannot read it. The elevated
 # Ghost reads it (Administrators enabled in its task token); the medium UI
@@ -142,6 +138,8 @@ Set-Acl -Path $secKey -AclObject $acl
 # config/backup already signed with the old key.
 $existing = (Get-ItemProperty -Path $secKey -Name 'SecretKey' -ErrorAction SilentlyContinue).SecretKey
 if ([string]::IsNullOrEmpty($existing)) {
+    # Lets the enforcer adopt the reduced-mode config once (see install_setup.ps1).
+    New-ItemProperty -Path $base -Name 'MigratePending' -PropertyType DWord -Value 1 -Force | Out-Null
     $bytes = New-Object byte[] 32
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     $hex = ($bytes | ForEach-Object { $_.ToString('x2') }) -join ''
@@ -155,5 +153,12 @@ if ([string]::IsNullOrEmpty($existing)) {
 # request channel instead of signing).
 New-ItemProperty -Path $base -Name 'Provisioned' -PropertyType DWord -Value 1 -Force | Out-Null
 Write-Host "[setup] Strong mode enabled (config signing moved to the elevated enforcer)." -ForegroundColor Cyan
+
+# Registered last: the task can fire as soon as it exists, and an enforcer that
+# starts before the secret does would run in reduced mode.
+# Registered from memory: a temp file could be changed before it is read.
+$null = Register-ScheduledTask -TaskName $taskName -Xml $xml -Force
+Write-Host "[setup] Registered '$taskName' (battery-safe, 1-min auto-relaunch)." -ForegroundColor Green
+Write-Host "[setup] Reboot to start the new enforcer and clear the old one." -ForegroundColor Cyan
 
 if ($Elevated) { Read-Host "`nDone. Press Enter to close" }

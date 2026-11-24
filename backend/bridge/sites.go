@@ -3,6 +3,7 @@ package bridge
 import (
 	"fmt"
 	"focus-lock/backend/blocking/hosts"
+	"focus-lock/backend/clock"
 	"focus-lock/backend/storage"
 	"sort"
 )
@@ -22,6 +23,9 @@ func (a *App) blockNow() {
 		return
 	}
 	a.Store.Load()
+	if !storage.Enforcing(&a.Store.Data, clock.Default.Now()) {
+		return // nothing is blocked right now
+	}
 	if err := hosts.Block(a.Store.Data.BlockedSites); err != nil {
 		fmt.Println("Warning: Failed to update hosts immediately (likely Permission Denied):", err)
 	}

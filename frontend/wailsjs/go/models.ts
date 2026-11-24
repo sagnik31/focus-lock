@@ -142,6 +142,8 @@ export namespace storage {
 	    schedule_unlock_window: string;
 	    // Go type: time
 	    schedule_session_start: any;
+	    // Go type: time
+	    schedule_session_end: any;
 	    recent_sites: string[];
 	    site_groups: SiteGroup[];
 	
@@ -166,6 +168,7 @@ export namespace storage {
 	        this.session_start = this.convertValues(source["session_start"], null);
 	        this.schedule_unlock_window = source["schedule_unlock_window"];
 	        this.schedule_session_start = this.convertValues(source["schedule_session_start"], null);
+	        this.schedule_session_end = this.convertValues(source["schedule_session_end"], null);
 	        this.recent_sites = source["recent_sites"];
 	        this.site_groups = this.convertValues(source["site_groups"], SiteGroup);
 	    }

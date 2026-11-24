@@ -29,9 +29,8 @@ Test-Path HKLM:\SOFTWARE\FocusLock\Security                              # True
 Get-ScheduledTask 'FocusLock Enforcer' | Select State, @{n='Cmd';e={$_.Actions.Execute}}, @{n='Args';e={$_.Actions.Arguments}}
 #   State Ready/Running, Cmd "C:\Program Files\Focus Lock\focus-lock.exe", Args --enforce
 Get-ScheduledTask FocusLockGhost, FocusLockLauncher -ErrorAction SilentlyContinue   # nothing
-(Get-MpPreference).ExclusionPath                                         # both paths below
+(Get-MpPreference).ExclusionPath                                         # the install folder, not %APPDATA%\FocusLock
 #   C:\Program Files\Focus Lock
-#   C:\Users\<you>\AppData\Roaming\FocusLock
 Test-Path $env:APPDATA\FocusLock\Bin                                     # False
 Get-CimInstance Win32_Process -Filter "Name='focus-lock.exe'" | Select ProcessId, ExecutablePath, CommandLine
 #   one with --enforce from C:\Program Files\Focus Lock (running already, no reboot needed)
@@ -233,3 +232,35 @@ Any installed build from `main` after `ed2be63` will do.
 - [ ] **One window.** Launch Focus Lock while it is open: no second window appears.
 - [ ] **Shared quota.** In a schedule window, use both emergency unlocks, then add a schedule that is
       active now: the unlock button stays at the limit.
+
+## 9. Review fixes (2026-11-24)
+
+- [ ] **Recovery without signing in again (G43).** Right after installing or updating, without
+      signing out: `(Get-ScheduledTaskInfo 'FocusLock Enforcer').NextRunTime` is within a minute.
+      Kill the enforcer: it is back within about a minute.
+- [ ] **Updater task rights (G23).** From a normal prompt, `schtasks /run /tn "FocusLock Updater"` is
+      allowed and `schtasks /delete /tn "FocusLock Updater" /f` is denied.
+- [ ] **Another account's admin password (G34).** On a standard account, run Setup with an admin's
+      credentials: Setup says the app runs in reduced mode, `Provisioned` is not set in
+      `HKLM:\SOFTWARE\FocusLock`, and the app can add a site.
+- [ ] **Reduced to strong (G33).** Uninstall, run `focus-lock.exe` without setup, add an app and a
+      site, then run Setup: both are still there, and `MigratePending` is gone from HKLM.
+- [ ] **Enforcer slot (G26).** In a normal PowerShell run
+      `$m = New-Object Threading.Mutex($true, 'Global\FocusLockGhost')`, then kill the enforcer: it
+      still comes back within a minute. A second `--enforce` from an elevated prompt exits at once.
+- [ ] **Protected apps (G27).** Adding `explorer.exe` is refused. Block `windows` and start a short
+      lock: the desktop and Focus Lock keep running.
+- [ ] **Offline lock (G31).** Start a lock, go offline, kill the enforcer and move the clock past the
+      end. Once online again, the lock resumes.
+- [ ] **UI (G40, G41).** Toggle two schedules quickly: both stick. Download an update during a lock:
+      **Install** is enabled by itself when the lock ends.
+- [ ] **Update (G39, G32).** Install an update: the app closes and reopens by itself. Start a
+      session between clicking **Install** and Setup starting: the app stays open and, after two
+      minutes, says the update did not go ahead.
+- [ ] **Install folder (G22).** Setup no longer asks for a folder. After an upgrade,
+      `%APPDATA%\FocusLock` is no longer a Defender exclusion.
+- [ ] **Chrome policy (G38).** With your own `URLBlocklist` entry, run a session and then uninstall:
+      your entry is still there.
+- [ ] **Double click (G57).** Double-click Emergency Unlock: only one is used.
+- [ ] **Sites (G50).** Adding `youtube` is refused; adding `https://www.example.org/x` blocks
+      `example.org`.

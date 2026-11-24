@@ -72,21 +72,16 @@ func (a *App) StopFocus() error {
 		return err
 	}
 
-	// Best-effort unblock, only once the policy has allowed the stop: a
-	// refused stop must leave the block in place. In strong mode the Ghost
-	// re-manages the hosts file anyway.
-	_ = unblockHosts()
-
-	// Record the completed session for history/streaks. No-op if the Ghost's
-	// enforcer already finalised it, or in strong mode where the UI can't sign
-	// (the Ghost records it on its expiry tick instead).
-	a.Store.RecordManualSessionEnd(clock.Default.Now())
-
 	// Reduced mode only: we own the config and the task, so tear the Ghost down
 	// when no schedule still needs it. In strong mode the task is admin-owned
 	// and stays resident (an idle Ghost is cheap).
 	if a.Store.CanSign() {
 		a.Store.Load()
+		// Best-effort unblock, but not while a schedule window still needs the
+		// block. (In strong mode the hosts file is the Ghost's alone.)
+		if !storage.EnforcementActive(&a.Store.Data, clock.Default.Now()) {
+			_ = unblockHosts()
+		}
 		hasEnabledSchedules := false
 		for _, s := range a.Store.Data.Schedules {
 			if s.Enabled {
@@ -100,9 +95,10 @@ func (a *App) StopFocus() error {
 			}
 			// The enforcer runs from the installed app exe; there is no staged
 			// copy to delete here (deleting it would remove the app itself).
-			a.Store.Data.GhostTaskName = ""
-			a.Store.Data.GhostExePath = ""
-			_ = a.Store.Save()
+			_ = a.Store.UpdateAtomic(func(cfg *storage.Config) {
+				cfg.GhostTaskName = ""
+				cfg.GhostExePath = ""
+			})
 		}
 	}
 	return nil

@@ -192,23 +192,28 @@ func VerifyFile(path, wantSHA256 string) error {
 
 // Client talks to GitHub and manages the download folder.
 type Client struct {
-	HTTP      *http.Client
-	APIURL    string            // the "latest release" endpoint
-	Dir       string            // download + bookkeeping folder
-	PublicKey ed25519.PublicKey // release signing key (SHA256SUMS.txt.sig)
+	HTTP *http.Client
+
+	// StallTimeout ends an installer download that receives no data for this long.
+	StallTimeout time.Duration
+	APIURL       string            // the "latest release" endpoint
+	Dir          string            // download + bookkeeping folder
+	PublicKey    ed25519.PublicKey // release signing key (SHA256SUMS.txt.sig)
 }
 
 // New returns a Client for the real GitHub endpoint storing files in dir.
 func New(dir string) *Client {
 	return &Client{
-		HTTP:      &http.Client{Timeout: 10 * time.Second},
-		APIURL:    LatestReleaseURL,
-		Dir:       dir,
-		PublicKey: ReleasePublicKey(),
+		HTTP: &http.Client{Timeout: 10 * time.Second},
+
+		StallTimeout: 60 * time.Second,
+		APIURL:       LatestReleaseURL,
+		Dir:          dir,
+		PublicKey:    ReleasePublicKey(),
 	}
 }
 
-// DefaultDir is %APPDATA%\FocusLock\update (per-user, Defender-excluded).
+// DefaultDir is %APPDATA%\FocusLock\update (per-user).
 func DefaultDir() (string, error) {
 	cfg, err := os.UserConfigDir()
 	if err != nil {
@@ -309,6 +314,9 @@ func (c *Client) fetchSmall(ctx context.Context, rawURL, name string) ([]byte, e
 	return data, nil
 }
 
+// ErrDownloadStalled means the download stopped receiving data.
+var ErrDownloadStalled = errors.New("the download stalled; check your connection and try again")
+
 // Progress receives download progress; total is <= 0 when unknown.
 type Progress func(done, total int64)
 
@@ -338,12 +346,22 @@ func (c *Client) Download(ctx context.Context, rel *Release, progress Progress) 
 	}
 	_ = os.Remove(final)
 
+	// Give up when no data arrives for a while: a stalled connection would
+	// otherwise keep every update action busy until the app restarts.
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	stall := time.AfterFunc(c.StallTimeout, func() { cancel(ErrDownloadStalled) })
+	defer stall.Stop()
+
 	// The installer download must not be cut off by the short API timeout,
 	// so it uses the client's transport without an overall deadline (the
 	// caller's ctx still cancels it).
 	dl := &http.Client{Transport: c.HTTP.Transport, CheckRedirect: c.HTTP.CheckRedirect, Jar: c.HTTP.Jar}
 	resp, err := c.get(ctx, setup.DownloadURL, dl)
 	if err != nil {
+		if errors.Is(context.Cause(ctx), ErrDownloadStalled) {
+			err = ErrDownloadStalled
+		}
 		return "", "", err
 	}
 	defer resp.Body.Close()
@@ -362,11 +380,19 @@ func (c *Client) Download(ctx context.Context, rel *Release, progress Progress) 
 		return "", "", err
 	}
 	h := sha256.New()
-	w := &progressWriter{w: io.MultiWriter(f, h), total: total, fn: progress}
+	w := &progressWriter{w: io.MultiWriter(f, h), total: total, fn: func(done, total int64) {
+		stall.Reset(c.StallTimeout)
+		if progress != nil {
+			progress(done, total)
+		}
+	}}
 	_, copyErr := io.Copy(w, io.LimitReader(resp.Body, maxSetupBytes+1))
 	closeErr := f.Close()
 	if copyErr == nil && w.done > maxSetupBytes {
 		copyErr = errors.New("the installer is unexpectedly large")
+	}
+	if copyErr != nil && errors.Is(context.Cause(ctx), ErrDownloadStalled) {
+		copyErr = ErrDownloadStalled
 	}
 	if copyErr != nil || closeErr != nil {
 		_ = os.Remove(part)

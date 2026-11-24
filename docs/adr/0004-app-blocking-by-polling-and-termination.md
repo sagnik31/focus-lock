@@ -17,7 +17,9 @@ the time. It should also catch renamed or helper executables of the same product
     characters) against the process's version metadata (product name and file
     description).
 - Blocked names are validated by `storage.ValidAppName` when added or imported, so entries
-  like `""` or `"."` can't match everything.
+  like `""` or `"."` can't match everything. Processes that Windows or Focus Lock needs
+  (`storage.ProtectedApp`) can't be added, and the enforcer never terminates them. The deep
+  match also skips everything in the Windows folder.
 - Every kill is recorded (per app and per hour) for the Insights panel.
 
 ## Alternatives considered
@@ -37,7 +39,7 @@ the time. It should also catch renamed or helper executables of the same product
 - A blocked app can run for up to about half a second before it is closed. Any unsaved
   work in it is lost, which the README warns about.
 - The deep match can catch a different app whose metadata contains a blocked name. The
-  three-character minimum keeps that rare.
+  three-character minimum and the skipped Windows folder keep that rare.
 - Polling costs a little CPU all the time during a session. Process enumeration is cheap,
   and metadata reads happen only on the slow tick.
 - Terminating elevated processes needs the enforcer's elevation.

@@ -32,6 +32,8 @@ const (
 	ApplyLaunchFailed  = 23 // Setup could not be started
 	ApplyFailed        = 24 // anything else (e.g. the secure folder could not be prepared)
 	ApplyDevBuild      = 25 // the installed exe is a dev build
+
+	ApplySessionUnknown = 26 // the config could not be read, so a session may be active
 )
 
 // ApplyExitMessage is the message the app shows for an --apply-update exit
@@ -50,6 +52,8 @@ func ApplyExitMessage(code int) string {
 		return "The release failed its signature or checksum check, so it was not installed."
 	case ApplyLaunchFailed:
 		return "The updater could not start the installer."
+	case ApplySessionUnknown:
+		return "The updater could not read the settings to check for a focus session. Try again, or run the installer from the Releases page."
 	case ApplyDevBuild:
 		return "Updates are turned off in development builds."
 	default:

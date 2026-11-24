@@ -50,7 +50,7 @@ func main() {
 
 		// Ensure only one Ghost runs (Single Instance)
 		// This prevents zombie processes from piling up if the UI crashes/restarts
-		if watchdog.AcquireInstance(watchdog.GhostMutex) {
+		if watchdog.AcquireEnforcer(store.SecureDir(), store.StrongMode(), store.CanSign()) {
 			// Another ghost is active. We can safely exit.
 			// The existing ghost will pick up the new config.
 			return

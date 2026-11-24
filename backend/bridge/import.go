@@ -72,6 +72,11 @@ func resolveAppName(inputName string, installedApps []sysinfo.AppInfo) string {
 		}
 	}
 
+	// An explicit file name means that program, installed or not.
+	if strings.HasSuffix(inputLower, ".exe") {
+		return strings.TrimSpace(inputName)
+	}
+
 	// The fuzzy rules need a few characters to be meaningful.
 	if len([]rune(inputLower)) < 3 {
 		return inputName

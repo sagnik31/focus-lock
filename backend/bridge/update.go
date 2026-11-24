@@ -307,8 +307,8 @@ func (a *App) DownloadUpdate() string {
 
 // InstallUpdate installs the downloaded, verified update: through the
 // "FocusLock Updater" task without a UAC prompt when it exists, otherwise by
-// launching the installer with one prompt. The app then quits (Setup
-// relaunches it when done). It is REFUSED while a manual
+// launching the installer with one prompt. Setup closes the app and
+// relaunches it when done. It is REFUSED while a manual
 // lock or schedule window is active: the config is reloaded and checked
 // against the trusted clock here, independent of what the UI shows. The
 // installer itself refuses mid-session too. Returns the state JSON.
@@ -372,10 +372,8 @@ func (a *App) InstallUpdate() string {
 		return a.publishUpdate(m)
 	}
 
-	// Setup is running (it kills any focus-lock.exe in PrepareToInstall
-	// anyway); quit so it can replace the exe cleanly.
 	m.busy = true
-	a.quitSoon()
+	go a.waitForSetup(m)
 	return a.updateJSON(m)
 }
 
@@ -386,23 +384,20 @@ var (
 	launchSetup       = updater.Launch
 	taskPollInterval  = time.Second
 	taskStartTimeout  = 30 * time.Second // the task never showed up as run
+	setupCloseTimeout = 2 * time.Minute  // Setup never closed the app
 	taskRunTimeout    = 20 * time.Minute // matches --apply-update's own deadline
 )
 
-// quitSoon quits the app shortly, so Setup can replace the exe.
-func (a *App) quitSoon() {
-	if a.ctx != nil {
-		ctx := a.ctx
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			runtime.Quit(ctx)
-		}()
-	}
+// waitForSetup keeps the app open until Setup closes it, which it does (in
+// PrepareToInstall) only once it has decided to go ahead. If that never
+// happens, Setup refused or failed, and the user gets to see it.
+func (a *App) waitForSetup(m *updateManager) {
+	time.Sleep(setupCloseTimeout)
+	a.failUpdaterTask(m, "The installer did not go ahead, so the update was not installed. Try again when no focus session is active.")
 }
 
 // waitForUpdaterTask follows the updater task run started at (or after)
-// started. Exit code 0 means Setup is running: the app quits and Setup
-// relaunches it. Any other code is shown as an error and the downloaded
+// started. Exit code 0 means Setup is running (see waitForSetup). Any other code is shown as an error and the downloaded
 // update stays ready to retry.
 func (a *App) waitForUpdaterTask(m *updateManager, started time.Time) {
 	seenRunning := false
@@ -428,7 +423,7 @@ func (a *App) waitForUpdaterTask(m *updateManager, started time.Time) {
 
 func (a *App) finishUpdaterTask(m *updateManager, code int) {
 	if code == updater.ApplyStarted {
-		a.quitSoon()
+		a.waitForSetup(m)
 		return
 	}
 	a.failUpdaterTask(m, updater.ApplyExitMessage(code))

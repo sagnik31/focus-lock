@@ -26,6 +26,8 @@ concurrency:
 
 jobs:
   release:
+    # A manual run can pick any branch; only main is ever signed and published.
+    if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     defaults:
       run:

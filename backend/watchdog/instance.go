@@ -2,6 +2,7 @@ package watchdog
 
 import (
 	"errors"
+	"path/filepath"
 
 	"golang.org/x/sys/windows"
 )
@@ -9,8 +10,38 @@ import (
 // Named mutexes that keep each mode to a single instance.
 const (
 	GhostMutex = `Global\FocusLockGhost`
-	UIMutex    = `Global\FocusLockMutex`
+	// UserGhostMutex is for enforcers without the strong-mode secret. It is a
+	// separate name so that one started by the direct-spawn fallback can never
+	// keep the elevated enforcer out.
+	UserGhostMutex = `Global\FocusLockGhostUser`
+	UIMutex        = `Global\FocusLockMutex`
 )
+
+// AcquireEnforcer claims the single enforcer slot and reports whether another
+// enforcer already has it. secureDir is the strong-mode signer's admin-only
+// folder ("" for any other enforcer). The signer uses a file there, opened
+// without sharing: any process can create a global mutex, but not that file.
+func AcquireEnforcer(secureDir string, strong, canSign bool) (alreadyRunning bool) {
+	switch {
+	case secureDir != "":
+		return acquireFile(filepath.Join(secureDir, "enforcer.lock"))
+	case strong && canSign:
+		return AcquireInstance(GhostMutex)
+	default:
+		return AcquireInstance(UserGhostMutex)
+	}
+}
+
+// acquireFile opens path without sharing for the life of the process.
+func acquireFile(path string) (alreadyRunning bool) {
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return false
+	}
+	_, err = windows.CreateFile(p, windows.GENERIC_READ|windows.GENERIC_WRITE, 0, nil,
+		windows.OPEN_ALWAYS, windows.FILE_ATTRIBUTE_NORMAL, 0)
+	return errors.Is(err, windows.ERROR_SHARING_VIOLATION)
+}
 
 // AcquireInstance claims the named mutex for the life of the process and
 // reports whether another process already has it. Any other failure returns

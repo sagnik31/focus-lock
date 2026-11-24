@@ -5,6 +5,7 @@ import (
 	"focus-lock/backend/storage"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 	"unsafe"
@@ -93,9 +94,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 
 	// Initial check to block immediately if needed
 	store.Load()
-	if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
-		blockSites(store)
-	} else if IsScheduleActive(store.Data.Schedules) {
+	if storage.Enforcing(&store.Data, clock.Default.Now()) {
 		blockSites(store)
 	}
 
@@ -131,13 +130,7 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 						// Force block sites immediately (Flush DNS)
 						// Also re-checks lock status inside blockSites/enforce
 						store.Load() // Ensure store.Data is latest for below checks
-						paused := !store.Data.PausedUntil.IsZero() && clock.Default.Now().Before(store.Data.PausedUntil)
-						if paused {
-							// Emergency pause: leave sites unblocked (the slow
-							// loop owns the pause state) instead of re-blocking.
-						} else if !store.Data.LockEndTime.IsZero() && clock.Default.Now().Before(store.Data.LockEndTime) {
-							blockSites(store)
-						} else if IsScheduleActive(store.Data.Schedules) {
+						if storage.Enforcing(&store.Data, clock.Default.Now()) {
 							blockSites(store)
 						}
 					}
@@ -240,14 +233,12 @@ func StartEnforcer(store *storage.Store, isGhost bool) {
 				// Not enforcing. Ensure Unblock.
 				unblockSites()
 
-				// Cleanup expired manual lock
-				if !store.Data.LockEndTime.IsZero() && clock.Default.Now().After(store.Data.LockEndTime) {
-					// Record the completed session for the history/streak view
-					// before we clear the lock (no-op if already recorded).
-					store.RecordManualSessionEnd(clock.Default.Now())
-					store.Data.LockEndTime = time.Time{}
-					store.Data.RemainingDuration = 0
-					store.Save()
+				// Clean up an expired manual lock and record the session. Not
+				// before NTP has answered: until then the time is the system
+				// clock's, and a wrong one would erase a lock that is still
+				// running. Left alone, the lock resumes once the clock is right.
+				if !store.Data.LockEndTime.IsZero() && clock.Default.Anchored() {
+					store.FinishExpiredLock(clock.Default.Now())
 				}
 
 				// The Ghost stays resident even when idle. It does NOT exit here.
@@ -292,7 +283,7 @@ func processRequests(store *storage.Store) bool {
 }
 
 func blockSites(store *storage.Store) {
-	sites := store.Data.BlockedSites
+	sites := slices.Clone(store.Data.BlockedSites)
 	if store.Data.BlockCommonVPN {
 		sites = append(sites, protection.GetVPNDomains()...)
 	}
@@ -368,7 +359,9 @@ func enforceFast(blockedMap map[string]bool, store *storage.Store) {
 				return // Stop enforcing if paused
 			}
 
-			killProcess(procEntry.ProcessID, exeName, store)
+			if !ownProcess(procEntry.ProcessID, getProcessPath(procEntry.ProcessID)) {
+				killProcess(procEntry.ProcessID, exeName, store)
+			}
 		}
 
 		if err := Process32Next(snapshot, &procEntry); err != nil {
@@ -389,6 +382,7 @@ func enforceDeep(blockedApps []string, store *storage.Store) {
 		return
 	}
 	defer windows.CloseHandle(snapshot)
+	windowsDir, _ := windows.GetSystemWindowsDirectory()
 
 	var procEntry ProcessEntry32
 	procEntry.Size = uint32(unsafe.Sizeof(procEntry))
@@ -408,7 +402,7 @@ func enforceDeep(blockedApps []string, store *storage.Store) {
 
 		// Metadata check
 		fullPath := getProcessPath(procEntry.ProcessID)
-		if fullPath != "" {
+		if fullPath != "" && !ownProcess(procEntry.ProcessID, fullPath) && metadataMatchable(fullPath, windowsDir) {
 			prodName, fileDesc := getFileMetadata(fullPath)
 			if deepMatch(prodName, fileDesc, blockedApps) {
 				killProcess(procEntry.ProcessID, exeName, store)
@@ -421,6 +415,16 @@ func enforceDeep(blockedApps []string, store *storage.Store) {
 	}
 }
 
+// ownProcess reports whether a process is this one or another instance of the
+// same executable (the UI and the enforcer share it), whatever it is named.
+func ownProcess(pid uint32, path string) bool {
+	if pid == uint32(os.Getpid()) {
+		return true
+	}
+	self, err := os.Executable()
+	return err == nil && path != "" && strings.EqualFold(filepath.Clean(path), filepath.Clean(self))
+}
+
 func killProcess(pid uint32, name string, store *storage.Store) {
 	// Open process with Terminate rights
 	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, pid)
@@ -429,6 +433,12 @@ func killProcess(pid uint32, name string, store *storage.Store) {
 		return
 	}
 	defer windows.CloseHandle(handle)
+
+	// While the handle is open the PID can't be reused. If that happened before,
+	// the PID now belongs to a process nobody asked to end.
+	if now := processName(pid); !strings.EqualFold(now, name) {
+		return
+	}
 
 	// Terminate
 	if err := windows.TerminateProcess(handle, 1); err == nil {

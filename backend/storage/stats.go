@@ -18,7 +18,7 @@ func (s *Store) RecordKill(appName string, now time.Time) {
 	if !s.canSign {
 		return
 	}
-	s.mu.Lock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
 	if s.Data.Stats.KillCounts == nil {
 		s.Data.Stats.KillCounts = make(map[string]int)
@@ -28,9 +28,7 @@ func (s *Store) RecordKill(appName string, now time.Time) {
 		s.Data.Stats.KillsByHour = make([]int, 24)
 	}
 	s.Data.Stats.KillsByHour[now.Hour()]++
-	err := s.saveInternal()
-	s.mu.Unlock()
-	_ = err
+	_ = s.saveInternal()
 }
 
 // RecordFocusDay marks today as a day with focus activity (for streaks). It is
@@ -41,8 +39,7 @@ func (s *Store) RecordFocusDay(now time.Time) {
 		return
 	}
 	day := now.Format(dayLayout)
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
 	days := s.Data.Stats.FocusDays
 	if n := len(days); n > 0 && days[n-1] == day {
@@ -56,53 +53,64 @@ func (s *Store) RecordFocusDay(now time.Time) {
 	_ = s.saveInternal()
 }
 
-// RecordManualSessionEnd appends a completed manual session to history if one
-// is in progress (SessionStart set), updates lifetime focus time, marks the
-// focus day, and clears SessionStart. It reloads first and no-ops if another
-// process already finalised the session, so it is safe to call from both the
-// expiry-cleanup path and StopFocus.
-func (s *Store) RecordManualSessionEnd(now time.Time) {
+// FinishExpiredLock records a manual lock that has run out and clears it. It
+// decides on the freshly loaded config under the config lock, so it can never
+// clear a lock that another process has just committed.
+func (s *Store) FinishExpiredLock(now time.Time) {
 	if !s.canSign {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
-	start := s.Data.SessionStart
-	if start.IsZero() {
-		return // no session in progress (or already recorded by the other process)
+	if s.Data.LockEndTime.IsZero() || ManualLockActive(&s.Data, now) {
+		return
 	}
-	dur := int64(now.Sub(start).Seconds())
+	recordManualSession(&s.Data, now)
+	s.Data.LockEndTime = time.Time{}
+	s.Data.RemainingDuration = 0
+	_ = s.saveInternal()
+}
+
+// recordManualSession appends the manual session in progress (SessionStart
+// set), if any, to the history, updates lifetime focus time, marks the focus
+// day and clears SessionStart. The session ends at the lock's own end when
+// that has passed: an expired lock may be cleaned up much later. Pure.
+func recordManualSession(cfg *Config, now time.Time) {
+	start := cfg.SessionStart
+	if start.IsZero() {
+		return
+	}
+	end := now
+	if !cfg.LockEndTime.IsZero() && cfg.LockEndTime.Before(now) {
+		end = cfg.LockEndTime
+	}
+	dur := int64(end.Sub(start).Seconds())
 	if dur < 0 {
 		dur = 0
 	}
-	rec := SessionRecord{
+	cfg.Stats.Sessions = append(cfg.Stats.Sessions, SessionRecord{
 		Start:       start,
-		End:         now,
+		End:         end,
 		DurationSec: dur,
 		Kind:        "manual",
-		AppCount:    len(s.Data.BlockedApps),
-		SiteCount:   len(s.Data.BlockedSites),
+		AppCount:    len(cfg.BlockedApps),
+		SiteCount:   len(cfg.BlockedSites),
+	})
+	if len(cfg.Stats.Sessions) > maxSessions {
+		cfg.Stats.Sessions = cfg.Stats.Sessions[len(cfg.Stats.Sessions)-maxSessions:]
 	}
-	s.Data.Stats.Sessions = append(s.Data.Stats.Sessions, rec)
-	if len(s.Data.Stats.Sessions) > maxSessions {
-		s.Data.Stats.Sessions = s.Data.Stats.Sessions[len(s.Data.Stats.Sessions)-maxSessions:]
-	}
-	s.Data.Stats.TotalFocusSeconds += dur
+	cfg.Stats.TotalFocusSeconds += dur
 
-	// Mark the focus day inline (we already hold the lock).
-	day := now.Format(dayLayout)
-	fd := s.Data.Stats.FocusDays
-	if n := len(fd); n == 0 || fd[n-1] != day {
+	day := end.In(now.Location()).Format(dayLayout)
+	fd := cfg.Stats.FocusDays
+	if n := len(fd); n == 0 || fd[n-1] < day {
 		fd = append(fd, day)
 		if len(fd) > maxFocusDays {
 			fd = fd[len(fd)-maxFocusDays:]
 		}
-		s.Data.Stats.FocusDays = fd
+		cfg.Stats.FocusDays = fd
 	}
-
-	s.Data.SessionStart = time.Time{}
-	_ = s.saveInternal()
+	cfg.SessionStart = time.Time{}
 }
 
 // RefreshScheduleQuota refills the emergency-unlock quota at the start of each
@@ -114,8 +122,7 @@ func (s *Store) RefreshScheduleQuota(now time.Time) {
 	if !s.canSign {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
 	if applyScheduleUnlockReset(&s.Data, now) {
 		_ = s.saveInternal()
@@ -139,8 +146,7 @@ func (s *Store) UpdateScheduleSession(now time.Time, active bool) {
 	if !s.canSign {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	defer s.lockConfig()()
 	_ = s.loadInternal()
 	if recordScheduleSessionEdge(&s.Data, now, active) {
 		_ = s.saveInternal()
@@ -154,35 +160,46 @@ func (s *Store) UpdateScheduleSession(now time.Time, active bool) {
 // on the same instant) clears the stamp without recording a session.
 func recordScheduleSessionEdge(cfg *Config, now time.Time, active bool) bool {
 	inProgress := !cfg.ScheduleSessionStart.IsZero()
-	switch {
-	case active && !inProgress:
-		cfg.ScheduleSessionStart = now
-		return true
+	// The windows ran out while nothing was watching (the PC was off) and
+	// another one is active now: those are two sessions.
+	missedEnd := inProgress && !cfg.ScheduleSessionEnd.IsZero() && now.Sub(cfg.ScheduleSessionEnd) > time.Minute
+	changed := false
 
-	case !active && inProgress:
-		start := cfg.ScheduleSessionStart
-		cfg.ScheduleSessionStart = time.Time{}
-		dur := int64(now.Sub(start).Seconds())
-		if dur <= 0 {
-			return true // nothing worth recording; just clear the stamp
+	if inProgress && (!active || missedEnd) {
+		changed = true
+		start, end := cfg.ScheduleSessionStart, now
+		if !cfg.ScheduleSessionEnd.IsZero() && cfg.ScheduleSessionEnd.Before(now) {
+			end = cfg.ScheduleSessionEnd
 		}
-		cfg.Stats.Sessions = append(cfg.Stats.Sessions, SessionRecord{
-			Start:       start,
-			End:         now,
-			DurationSec: dur,
-			Kind:        "scheduled",
-			AppCount:    len(cfg.BlockedApps),
-			SiteCount:   len(cfg.BlockedSites),
-		})
-		if len(cfg.Stats.Sessions) > maxSessions {
-			cfg.Stats.Sessions = cfg.Stats.Sessions[len(cfg.Stats.Sessions)-maxSessions:]
+		cfg.ScheduleSessionStart, cfg.ScheduleSessionEnd = time.Time{}, time.Time{}
+		inProgress = false
+		// A zero-length window just clears the stamp.
+		if dur := int64(end.Sub(start).Seconds()); dur > 0 {
+			cfg.Stats.Sessions = append(cfg.Stats.Sessions, SessionRecord{
+				Start:       start,
+				End:         end,
+				DurationSec: dur,
+				Kind:        "scheduled",
+				AppCount:    len(cfg.BlockedApps),
+				SiteCount:   len(cfg.BlockedSites),
+			})
+			if len(cfg.Stats.Sessions) > maxSessions {
+				cfg.Stats.Sessions = cfg.Stats.Sessions[len(cfg.Stats.Sessions)-maxSessions:]
+			}
+			cfg.Stats.TotalFocusSeconds += dur
 		}
-		cfg.Stats.TotalFocusSeconds += dur
-		return true
-
-	default:
-		return false
 	}
+	if active {
+		if !inProgress {
+			cfg.ScheduleSessionStart = now
+			changed = true
+		}
+		if end, ok := ActiveScheduleEnd(cfg.Schedules, now); ok && !end.Equal(cfg.ScheduleSessionEnd) {
+			cfg.ScheduleSessionEnd = end
+			changed = true
+		}
+	}
+	return changed
 }
 
 // StreakFromDays computes the current and longest daily streaks from a set of

@@ -39,6 +39,7 @@ type fakeGitHub struct {
 	hits      map[string]int
 	userAgent string
 	key       ed25519.PrivateKey // signs sums for SHA256SUMS.txt.sig
+	stall     bool               // send one byte of the installer, then nothing
 	badSig    bool               // serve a signature of different data
 }
 
@@ -108,6 +109,12 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write([]byte(base64.StdEncoding.EncodeToString(ed25519.Sign(f.key, signed)) + "\n"))
 	case strings.HasPrefix(r.URL.Path, "/dl/FocusLock-Setup"):
+		if f.stall {
+			_, _ = w.Write(f.setup[:1])
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
 		_, _ = w.Write(f.setup)
 	default:
 		http.NotFound(w, r)
@@ -314,6 +321,21 @@ func TestDownloadMissingChecksumEntry(t *testing.T) {
 	}
 	if f.hitCount("/dl/"+SetupAssetName(testVer)) != 0 {
 		t.Fatal("installer fetched before its checksum was known")
+	}
+}
+
+// G42: a download that stops receiving data ends instead of hanging forever.
+func TestDownloadStalls(t *testing.T) {
+	f := newFake(t)
+	f.stall = true
+	c := f.client(t)
+	c.StallTimeout = 100 * time.Millisecond
+	rel, err := c.Latest(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Download(context.Background(), rel, nil); !errors.Is(err, ErrDownloadStalled) {
+		t.Fatalf("want ErrDownloadStalled, got %v", err)
 	}
 }
 

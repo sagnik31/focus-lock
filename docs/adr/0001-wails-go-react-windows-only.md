@@ -17,8 +17,8 @@ completely different.
 - Package them as one native executable with **Wails v2**, which renders the UI in WebView2
   and exposes Go methods to the frontend through generated bindings.
 - Target **Windows only**. Platform-specific code lives in `*_windows.go` files, and
-  `*_other.go` stubs keep `go build ./...` working on other systems so the pure logic can
-  still be tested there.
+  `*_other.go` stubs keep the packages without Windows imports building on other
+  systems.
 
 ## Alternatives considered
 

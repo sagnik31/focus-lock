@@ -1,7 +1,7 @@
 ; Focus Lock - Inno Setup installer
 ;
 ; Builds a single Setup.exe that installs the app AND performs the one-time
-; elevated enforcement setup (Defender exclusions, scheduled task that runs the
+; elevated enforcement setup (Defender exclusion, scheduled task that runs the
 ; installed exe with --enforce, HKLM tamper-protection secret) in one pass -
 ; removing the manual "run an admin PowerShell script" onboarding step.
 ;
@@ -36,6 +36,9 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
+; The elevated tasks run the installed exe, so it must be in a folder that only
+; administrators can write to.
+DisableDirPage=yes
 UninstallDisplayIcon={app}\{#AppExe}
 OutputDir=Output
 OutputBaseFilename=FocusLock-Setup-{#AppVersion}
@@ -83,7 +86,7 @@ Filename: "{win}\explorer.exe"; Parameters: """{app}\{#AppExe}"""; Flags: nowait
 
 [UninstallRun]
 ; Tear down enforcement (tasks, running enforcer/app, hosts-file block, HKLM +
-; HKCU state, both Defender exclusions, %APPDATA%\FocusLock) before the files
+; HKCU state, the Defender exclusion, %APPDATA%\FocusLock) before the files
 ; are removed. -ExePath lets it remove the install-folder exclusion.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\scripts\install_setup.ps1"" -Uninstall -ExePath ""{app}\{#AppExe}"" -AppData ""{userappdata}"" -LogPath ""{%TEMP}\FocusLock-uninstall.log"""; \
@@ -136,6 +139,7 @@ end;
 // the app-side check in the updater still applies to them.
 function SessionActive(): Boolean;
 var
+  RC: Integer;
   Exe, Ver: String;
 begin
   Result := False;
@@ -143,7 +147,10 @@ begin
   Ver := InstalledVersion();
   if (Ver = '') or (Ver = '1.0.0') or not FileExists(Exe) then
     Exit;
-  Result := RunHidden(Exe, '--session-active') = 3;
+  RC := RunHidden(Exe, '--session-active');
+  // 4 or a failed launch: unknown. An in-app update then stops; Setup run by
+  // hand goes on, so that a broken install can always be repaired.
+  Result := (RC = 3) or ((RC <> 0) and (IsPromptedUpdate() or IsTaskUpdate()));
 end;
 
 // Upgrade: the running enforcer (and the app) hold {app}\{#AppExe} open, and the
@@ -189,6 +196,9 @@ begin
   RC := RunHidden(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params);
   if RC = 0 then
     EnforcementReady := True
+  else if RC = 2 then
+    SuppressibleMsgBox('Administrator approval came from a different Windows account than the one signed in, so enforcement was not set up.' + #13#10#13#10 +
+      'Focus Lock runs in reduced mode for this user.', mbInformation, MB_OK, IDOK)
   else
     SuppressibleMsgBox('Focus Lock was installed, but the enforcement setup failed (code ' + IntToStr(RC) + ').' + #13#10#13#10 +
       'The app will run in reduced mode. Details are in:' + #13#10 + LogPath, mbError, MB_OK, IDOK);

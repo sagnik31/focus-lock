@@ -29,7 +29,10 @@ func ApplyChrome(sites []string) error {
 	if len(desired) == 0 {
 		return ClearChrome()
 	}
-	owned := readOwned()
+	owned, err := readOwned()
+	if err != nil {
+		return err
+	}
 	existing, err := readList()
 	if err != nil {
 		return err
@@ -55,9 +58,9 @@ func ApplyChrome(sites []string) error {
 // there is nothing to clear (one registry read), so it is safe to call on
 // every idle tick.
 func ClearChrome() error {
-	owned := readOwned()
-	if len(owned) == 0 {
-		return nil
+	owned, err := readOwned()
+	if err != nil || len(owned) == 0 {
+		return err
 	}
 	existing, err := readList()
 	if err != nil {
@@ -95,7 +98,10 @@ func readList() ([]string, error) {
 			continue
 		}
 		v, _, err := k.GetStringValue(name)
-		if err != nil || v == "" {
+		if err != nil {
+			return nil, err // rewriting the list without it would lose it
+		}
+		if v == "" {
 			continue
 		}
 		entries = append(entries, entry{n, v})
@@ -122,16 +128,23 @@ func writeList(list []string) error {
 		return err
 	}
 	defer k.Close()
-	// Replace the whole list: Chrome stops reading at the first missing index,
-	// so the values must be a contiguous 1..N run.
-	if names, err := k.ReadValueNames(-1); err == nil {
-		for _, name := range names {
-			_ = k.DeleteValue(name)
-		}
-	}
+	// Chrome stops reading at the first missing index, so the values must be a
+	// contiguous 1..N run. Write that first and then drop the surplus: entries
+	// only ever move to a lower index, so a failure part-way loses none.
 	for i, v := range list {
 		if err := k.SetStringValue(strconv.Itoa(i+1), v); err != nil {
 			return err
+		}
+	}
+	names, err := k.ReadValueNames(-1)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		if n, err := strconv.Atoi(name); err == nil && (n < 1 || n > len(list) || name != strconv.Itoa(n)) {
+			if err := k.DeleteValue(name); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -151,17 +164,20 @@ func deleteIfEmpty(path string) {
 	_ = registry.DeleteKey(registry.LOCAL_MACHINE, path)
 }
 
-func readOwned() []string {
+func readOwned() ([]string, error) {
 	k, err := registry.OpenKey(registry.LOCAL_MACHINE, ownedKey, registry.QUERY_VALUE)
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil, nil
+	}
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer k.Close()
 	v, _, err := k.GetStringsValue(ownedValue)
-	if err != nil {
-		return nil
+	if errors.Is(err, registry.ErrNotExist) {
+		return nil, nil
 	}
-	return v
+	return v, err
 }
 
 func writeOwned(owned []string) error {

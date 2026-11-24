@@ -18,7 +18,9 @@ func stubSpawn(t *testing.T, running bool, err error) *int {
 	prevSpawn, prevRunning := spawnEnforcer, ghostRunning
 	spawnEnforcer = func(string, string) error { calls++; return err }
 	ghostRunning = func() bool { return running }
-	t.Cleanup(func() { spawnEnforcer, ghostRunning = prevSpawn, prevRunning })
+	prevClock := startClock
+	startClock = func() {} // no network in tests
+	t.Cleanup(func() { spawnEnforcer, ghostRunning, startClock = prevSpawn, prevRunning, prevClock })
 	return &calls
 }
 
@@ -50,13 +52,18 @@ func TestStrongModeStartupReportsSpawnFailure(t *testing.T) {
 	}
 }
 
-func TestStrongModeStartupSkipsSpawnWhenRunning(t *testing.T) {
-	calls := stubSpawn(t, true, errors.New("unused"))
+// G26: a mutex that only looks like the enforcer's must not stop the UI from
+// asking the task to run (a no-op while the enforcer is alive).
+// G35: the UI keeps its own trusted clock synced.
+func TestStrongModeStartupAlwaysAsksTask(t *testing.T) {
+	calls := stubSpawn(t, true, nil)
+	clocks := 0
+	startClock = func() { clocks++ }
 	a := strongModeApp()
 	a.localWarning = "stale"
 	a.Startup(t.Context())
-	if *calls != 0 {
-		t.Fatalf("spawn called %d times with the enforcer running", *calls)
+	if *calls != 1 || clocks != 1 {
+		t.Fatalf("spawn called %d times, clock started %d times; want 1 and 1", *calls, clocks)
 	}
 	if got := a.GetConfig().LastEnforcementError; got != "" {
 		t.Fatalf("stale warning kept: %q", got)

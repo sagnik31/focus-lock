@@ -1,6 +1,9 @@
 package storage
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // A schedule window is active Mon 09:00-17:00 (at(0, 12, 0) is Monday noon).
 func scheduleLockedConfig() *Config {
@@ -86,6 +89,7 @@ func TestStartFocusDuringScheduleDoesNotRefillUnlocks(t *testing.T) {
 		if err := ApplyOperation(cfg, Operation{Type: OpEmergencyUnlock}, now); err != nil {
 			t.Fatalf("unlock %d: %v", i+1, err)
 		}
+		cfg.PausedUntil = time.Time{}
 	}
 	if err := ApplyOperation(cfg, Operation{Type: OpStartFocus, Seconds: 60}, now); err != nil {
 		t.Fatalf("starting a manual lock during a window should be allowed: %v", err)

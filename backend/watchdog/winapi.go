@@ -137,6 +137,24 @@ func getProcessPath(pid uint32) string {
 	return windows.UTF16ToString(buf[:size])
 }
 
+// processName returns the executable name of a running process, as a process
+// snapshot reports it, or "".
+func processName(pid uint32) string {
+	snapshot, err := windows.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return ""
+	}
+	defer windows.CloseHandle(snapshot)
+	var entry ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	for err := Process32First(snapshot, &entry); err == nil; err = Process32Next(snapshot, &entry) {
+		if entry.ProcessID == pid {
+			return windows.UTF16ToString(entry.ExeFile[:])
+		}
+	}
+	return ""
+}
+
 func Process32First(snapshot windows.Handle, pe *ProcessEntry32) error {
 	r1, _, err := procProcess32First.Call(uintptr(snapshot), uintptr(unsafe.Pointer(pe)))
 	if r1 == 1 { // TRUE

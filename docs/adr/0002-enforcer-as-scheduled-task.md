@@ -20,13 +20,14 @@ remove.
 ## Decision
 
 - The **same installed exe**, run with `--enforce`, is the enforcer. It is headless and
-  single-instance (named mutex), with no separate copy and no obfuscation.
+  single-instance, with no separate copy and no obfuscation.
 - The installer registers the **`FocusLock Enforcer` scheduled task** from XML. It runs at
-  logon with highest privileges and **repeats every minute**, with
+  logon with highest privileges and **repeats every minute** from a time trigger (a logon
+  trigger's repetition would start only at the next sign-in), with
   `MultipleInstancesPolicy=IgnoreNew`, no run-time limit, and permission to run on battery.
 - The enforcer can be killed freely. Recovery is the one-minute repetition, and the UI also
-  starts it on launch whenever a lock or schedule is active. Because of the repetition it
-  stays resident when idle instead of exiting.
+  starts it on launch (in reduced mode only when a lock is active or a schedule is enabled).
+  Because of the repetition it stays resident when idle instead of exiting.
 - Session state is persisted, so a relaunched enforcer picks up the same session.
 
 ## Alternatives considered

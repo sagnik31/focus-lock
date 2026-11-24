@@ -38,6 +38,14 @@ func SecureUpdateDir() (string, error) {
 	parent := filepath.Join(base, "FocusLock")
 	dir := filepath.Join(parent, "update")
 	for _, d := range []string{parent, dir} {
+		// Anything in a folder that someone else created before us may still be
+		// open or writable for them, so start over. (The parent can't be
+		// removed here; install_setup.ps1 does that.)
+		if d == dir && !ownedByAdmins(d) {
+			if err := os.RemoveAll(d); err != nil {
+				return "", fmt.Errorf("replace %s: %w", d, err)
+			}
+		}
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			return "", err
 		}
@@ -65,6 +73,21 @@ func notReparsePoint(dir string) error {
 		return fmt.Errorf("%s is a reparse point", dir)
 	}
 	return nil
+}
+
+// ownedByAdmins reports whether dir is missing or owned by Administrators (as
+// protect leaves it) or SYSTEM, which a non-elevated process can't set.
+func ownedByAdmins(dir string) bool {
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		return true
+	}
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return false
+	}
+	owner, _, err := sd.Owner()
+	return err == nil && owner != nil &&
+		(owner.IsWellKnown(windows.WinBuiltinAdministratorsSid) || owner.IsWellKnown(windows.WinLocalSystemSid))
 }
 
 func protect(dir string) error {

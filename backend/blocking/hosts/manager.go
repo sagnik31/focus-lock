@@ -44,24 +44,7 @@ func Block(domains []string) error {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	var newLines []string
-	inBlock := false
-
-	// Filter out existing block
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == startMarker {
-			inBlock = true
-			continue
-		}
-		if trimmed == endMarker {
-			inBlock = false
-			continue
-		}
-		if !inBlock {
-			newLines = append(newLines, line)
-		}
-	}
+	newLines := stripBlock(lines)
 
 	// Generate new block
 	expanded := ExpandDomains(domains)
@@ -109,23 +92,7 @@ func Unblock() error {
 	}
 
 	lines := strings.Split(string(content), "\n")
-	var newLines []string
-	inBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == startMarker {
-			inBlock = true
-			continue
-		}
-		if trimmed == endMarker {
-			inBlock = false
-			continue
-		}
-		if !inBlock {
-			newLines = append(newLines, line)
-		}
-	}
+	newLines := stripBlock(lines)
 
 	finalContent := strings.Join(newLines, "\n")
 
@@ -146,6 +113,51 @@ func Unblock() error {
 	return nil
 }
 
+// stripBlock returns lines without the Focus Lock section. When the end marker
+// is missing (a write was cut short), only lines Focus Lock wrote are removed:
+// the rest of the file belongs to someone else. Must match Remove-FocusLockLines
+// in scripts/install_setup.ps1.
+func stripBlock(lines []string) []string {
+	at := func(i int) string { return strings.TrimSpace(lines[i]) }
+	var out []string
+	n := len(lines)
+	for i := 0; i < n; {
+		switch at(i) {
+		case endMarker:
+			i++
+			continue
+		case startMarker:
+		default:
+			out = append(out, lines[i])
+			i++
+			continue
+		}
+		j := i + 1
+		for j < n && at(j) != startMarker && at(j) != endMarker {
+			j++
+		}
+		if j < n && at(j) == endMarker {
+			i = j + 1
+			continue
+		}
+		// No end marker: drop the redirect pairs that follow, and a last line
+		// that was cut off.
+		i++
+		for i < j {
+			domain, ok := strings.CutPrefix(at(i), redirectIP+" ")
+			if ok && i+1 < j && (at(i+1) == redirectIPv6+" "+domain ||
+				(i+2 == n && strings.HasPrefix(redirectIPv6+" "+domain, at(i+1)))) {
+				i += 2
+			} else if i+1 == n && (ok || strings.HasPrefix(redirectIP, at(i))) {
+				i++
+			} else {
+				break
+			}
+		}
+	}
+	return out
+}
+
 func ensureWritable(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -164,7 +176,7 @@ func ExpandDomains(inputs []string) []string {
 	unique := make(map[string]bool)
 
 	for _, raw := range inputs {
-		domain := cleanDomain(raw)
+		domain := BaseDomain(raw)
 		if domain == "" {
 			continue
 		}
@@ -205,6 +217,23 @@ func ExpandDomains(inputs []string) []string {
 // to a bare hostname. It returns "" when the input has no usable host.
 func CleanDomain(input string) string { return cleanDomain(input) }
 
+// BaseDomain is CleanDomain without a leading "www.", so "www.example.org"
+// covers the whole site in every blocking layer.
+func BaseDomain(input string) string {
+	domain := cleanDomain(input)
+	if rest, ok := strings.CutPrefix(domain, "www."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	return domain
+}
+
+// ValidSite reports whether input names a website that can be blocked: it
+// must have a host name with a dot in it.
+func ValidSite(input string) bool {
+	host := cleanDomain(input)
+	return strings.Contains(strings.Trim(host, "."), ".") && !strings.ContainsAny(host, " \t\r\n#:")
+}
+
 func cleanDomain(input string) string {
 	input = strings.TrimSpace(input)
 	if input == "" {
@@ -221,7 +250,7 @@ func cleanDomain(input string) string {
 	if err != nil {
 		return ""
 	}
-	return strings.ToLower(u.Hostname())
+	return strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
 }
 
 func getHostsPath() string {

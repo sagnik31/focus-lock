@@ -26,6 +26,21 @@ func TestDeepMatch(t *testing.T) {
 	}
 }
 
+// G27: the loose match never reaches Windows or protected processes.
+func TestMetadataMatchable(t *testing.T) {
+	for path, want := range map[string]bool{
+		`C:\Windows\System32\winlogon.exe`:           false,
+		`c:\windows\explorer.exe`:                    false,
+		`C:\WindowsApps\game.exe`:                    true,
+		`C:\Program Files\Focus Lock\focus-lock.exe`: false,
+		`C:\Program Files\Steam\steam.exe`:           true,
+	} {
+		if got := metadataMatchable(path, `C:\Windows`); got != want {
+			t.Errorf("%s: got %v", path, got)
+		}
+	}
+}
+
 func TestDeepMatchIgnoresEmptyBlockedName(t *testing.T) {
 	// strings.Contains(x, "") is always true, so a stray "" or ".exe" in the
 	// block list must be skipped rather than matching every process.

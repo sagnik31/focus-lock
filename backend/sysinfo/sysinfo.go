@@ -95,7 +95,8 @@ func fetchIconsBatch(paths []string) (map[string]string, error) {
 
 	// Hide the window
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		HideWindow: true,
+		HideWindow:    true,
+		CreationFlags: 0x08000000, // CREATE_NO_WINDOW
 	}
 
 	output, err := cmd.Output()

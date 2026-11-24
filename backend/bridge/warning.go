@@ -28,8 +28,7 @@ func (a *App) warnEnforcement(context string, err error) {
 		a.warnMu.Unlock()
 		return
 	}
-	a.Store.Data.LastEnforcementError = msg
-	_ = a.Store.Save()
+	_ = a.Store.UpdateAtomic(func(cfg *storage.Config) { cfg.LastEnforcementError = msg })
 }
 
 // clearLocalWarning drops the UI-local warning before a fresh attempt.

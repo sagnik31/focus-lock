@@ -22,6 +22,9 @@ import (
 type Request struct {
 	ID string    `json:"id"`
 	Op Operation `json:"op"`
+	// Expires (Unix ms) is when the UI stops waiting. A request left over from
+	// then is dropped: the user was told that it failed. 0 means never.
+	Expires int64 `json:"expires,omitempty"`
 }
 
 // Result is the Ghost's verdict on a Request.
@@ -66,7 +69,8 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 	defer s.reqMu.Unlock()
 
 	dir := filepath.Dir(s.filePath)
-	req := Request{ID: newRequestID(), Op: op}
+	deadline := time.Now().Add(timeout)
+	req := Request{ID: newRequestID(), Op: op, Expires: deadline.UnixMilli()}
 
 	// Clear any stale result for a previous request before submitting.
 	_ = os.Remove(resultPath(dir))
@@ -75,19 +79,33 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 		return err
 	}
 
-	deadline := time.Now().Add(timeout)
+	if err, ok := awaitResult(dir, req.ID, deadline); ok {
+		return err
+	}
+	// Taking the request back succeeds only if the Ghost hasn't claimed it.
+	if os.Remove(requestPath(dir)) == nil {
+		return errorString("enforcement process did not respond; is Focus Lock running?")
+	}
+	// It has, so the verdict is on its way.
+	if err, ok := awaitResult(dir, req.ID, time.Now().Add(timeout)); ok {
+		return err
+	}
+	return errorString("the enforcement process did not confirm the change; check whether it was applied before trying again")
+}
+
+// awaitResult waits for the verdict on request id; ok is false at the deadline.
+func awaitResult(dir, id string, deadline time.Time) (verdict error, ok bool) {
 	for time.Now().Before(deadline) {
-		res, ok := readResult(dir)
-		if ok && res.ID == req.ID {
+		if res, found := readResult(dir); found && res.ID == id {
 			_ = os.Remove(resultPath(dir))
 			if !res.OK {
-				return errorString(res.Error)
+				return errorString(res.Error), true
 			}
-			return nil
+			return nil, true
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return errorString("enforcement process did not respond; is Focus Lock running?")
+	return nil, false
 }
 
 // --- Ghost side ---
@@ -95,17 +113,23 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 // TakePendingRequest returns a queued request (if any) and removes the request
 // file so it is processed once. ok is false when no request is waiting.
 func TakePendingRequest(dir string) (Request, bool) {
-	data, err := os.ReadFile(requestPath(dir))
+	// Renaming claims the request: the UI can no longer take it back.
+	claimed := requestPath(dir) + ".taken"
+	if err := os.Rename(requestPath(dir), claimed); err != nil {
+		return Request{}, false
+	}
+	defer os.Remove(claimed)
+	data, err := os.ReadFile(claimed)
 	if err != nil {
 		return Request{}, false
 	}
 	var req Request
 	if err := json.Unmarshal(data, &req); err != nil {
-		// Malformed request: drop it so it does not wedge the queue.
-		_ = os.Remove(requestPath(dir))
-		return Request{}, false
+		return Request{}, false // malformed: dropped
 	}
-	_ = os.Remove(requestPath(dir))
+	if req.Expires != 0 && time.Now().UnixMilli() > req.Expires {
+		return Request{}, false // expired: dropped
+	}
 	return req, true
 }
 

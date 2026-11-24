@@ -29,6 +29,62 @@ func secureLockedConfig() Config {
 	}
 }
 
+// G33: the first strong-mode load adopts the reduced-mode config once.
+func TestAdoptLegacyConfigOnce(t *testing.T) {
+	old := testSigningStore(t)
+	old.Data = secureLockedConfig()
+	if err := old.Save(); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{filePath: old.filePath, activeSecret: []byte("hklm"), strong: true, canSign: true,
+		secureDir: t.TempDir(), legacySecret: []byte("test-secret")}
+	if got := reload(t, s); len(got.BlockedApps) != 1 || got.LockEndTime.IsZero() {
+		t.Fatalf("reduced-mode config not adopted: %+v", got)
+	}
+	if s.legacySecret != nil {
+		t.Error("the legacy secret must not be accepted after the first save")
+	}
+	if got := reload(t, s); len(got.BlockedApps) != 1 {
+		t.Errorf("config not re-signed: %+v", got)
+	}
+}
+
+func TestLegacyConfigRejectedWithoutMigration(t *testing.T) {
+	old := testSigningStore(t)
+	old.Data = secureLockedConfig()
+	if err := old.Save(); err != nil {
+		t.Fatal(err)
+	}
+	s := &Store{filePath: old.filePath, activeSecret: []byte("hklm"), strong: true, canSign: true}
+	if err := s.Load(); err == nil {
+		t.Fatal("a config signed with another secret was accepted")
+	}
+	if _, err := os.Stat(old.filePath + ".rejected"); err != nil {
+		t.Error("rejected config not kept")
+	}
+}
+
+// G36: once the secure copy is written the save is committed.
+func TestSaveCommittedBySecureCopy(t *testing.T) {
+	s := secureTestStore(t)
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	// A folder in place of config.json makes its replacement fail.
+	if err := os.Remove(s.filePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(s.filePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyRequest(Operation{Type: OpStartFocus, Seconds: 3600}, time.Now()); err != nil {
+		t.Fatalf("committed save reported as failed: %v", err)
+	}
+	if got := reload(t, s); got.LockEndTime.IsZero() {
+		t.Error("lock lost")
+	}
+}
+
 func reload(t *testing.T, s *Store) Config {
 	t.Helper()
 	s.Data = Config{}

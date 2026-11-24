@@ -1,8 +1,13 @@
 import { useState, useEffect } from 'react';
 import { ScheduleEditor } from './ScheduleEditor';
 import { GetSchedules, SaveSchedules } from '../../wailsjs/go/bridge/App';
+import { createSerialQueue } from './serialQueue';
 import { storage } from '../../wailsjs/go/models';
 import { Plus, CalendarClock, Pencil, Trash2 } from 'lucide-react';
+
+// One queue for the whole app: each change reads the list, edits it and saves
+// it, so two overlapping changes would lose one.
+const runSerially = createSerialQueue();
 
 interface ScheduleListProps {
     isLocked?: boolean;
@@ -41,7 +46,7 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
     // reloaded. A refusal (e.g. editing an enabled schedule mid-session) is
     // shown and the list goes back to what the backend actually holds.
     // Returns whether the save went through.
-    const persist = async (change: (current: storage.Schedule[]) => storage.Schedule[]): Promise<boolean> => {
+    const persist = (change: (current: storage.Schedule[]) => storage.Schedule[]): Promise<boolean> => runSerially(async () => {
         setSaveError("");
         try {
             const current = (await GetSchedules()) || [];
@@ -53,7 +58,7 @@ export const ScheduleList: React.FC<ScheduleListProps> = ({ isLocked }) => {
             await loadSchedules();
             return false;
         }
-    };
+    });
 
     const handleSave = async (schedule: storage.Schedule) => {
         const creating = isCreating;

@@ -3,7 +3,7 @@
 Focus Lock is a Windows app and website blocker for people who want to commit to a
 distraction-free session and then not be able to talk themselves out of it. You choose what
 to block and for how long. Once a session starts, the block stays in force until the timer
-runs out, even if you close the app, kill its process or change the system clock.
+runs out. Closing the app, killing its process or changing the system clock won't end it.
 
 Built with Go and React on [Wails](https://wails.io/).
 
@@ -20,16 +20,18 @@ weaken it.
 
 ## Features
 
-- **Timed sessions**: a preset, an exact duration, or "focus until" a date and time.
+- **Timed sessions**: a preset, an exact duration, or "focus until" a date and time (up to
+  365 days).
 - **Schedules**: recurring windows (including overnight ones) that block automatically.
-- **App blocking**: blocked programs are closed if they start during a session.
+- **App blocking**: blocked programs are closed, whether already running or started during
+  a session. Programs Windows needs can't be blocked.
 - **Website blocking**: system-wide through the `hosts` file, and through Chrome policy
   so Secure DNS and cached pages don't get around it.
 - **Presets and groups**: one-click category lists, your own named groups and recently
   used sites.
 - **Hard to bypass**: a background enforcer survives closing the window and restarts,
-  session time is checked against network time, and the settings are signed so editing
-  them doesn't help.
+  session time is checked against network time when online, and the settings are signed so
+  editing them doesn't help.
 - **VPN blocking** (optional): closes common VPN apps and blocks their sites, so a VPN
   can't route around the block.
 - **Emergency unlocks**: two one-minute pauses per session.

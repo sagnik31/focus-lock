@@ -11,22 +11,28 @@ In-app updates don't trigger that warning.
 
 ## Install
 
-Run the installer and approve the single UAC prompt. It does the one-time elevated setup:
+Run the installer and approve the single UAC prompt. It installs to `Program Files` (there
+is no folder choice, because the elevated tasks run the exe from there) and does the
+one-time elevated setup:
 
-- adds Defender exclusions,
+- adds a Defender exclusion for the install folder,
 - registers the `FocusLock Enforcer` scheduled task, which runs the installed exe with
-  `--enforce` at logon and relaunches it every minute,
+  `--enforce` at logon and starts it again within a minute if it stops,
 - registers the on-demand `FocusLock Updater` task, which installs in-app updates without
   another UAC prompt,
 - stores the tamper-protection secret in `HKLM` and creates the admin-only
   `%ProgramData%\FocusLock` folder.
 
-It then starts the enforcer, with no reboot needed. If setup fails, Setup says so and the app
-runs in reduced mode. The log is `%TEMP%\FocusLock-setup.log`.
+It then starts the enforcer, with no reboot needed. If setup fails, Setup says so. On a first
+install the app then runs in reduced mode. The log is `%TEMP%\FocusLock-setup.log`.
 
 > Strong (tamper-resistant) mode assumes the signed-in user is a local administrator. On a
-> standard-user account the app still installs and runs, but stays in reduced mode with a
-> per-user `HKCU` secret.
+> standard-user account, or when another account's admin password is used, Setup says so and
+> skips the enforcement setup. The app still runs, in reduced mode with a per-user `HKCU`
+> secret. If an older version set up strong mode this way, uninstall and install again.
+>
+> Moving from reduced to strong mode keeps your settings and history. A config that can't be
+> verified is kept as `%APPDATA%\FocusLock\config.json.rejected`.
 
 ## Update
 
@@ -40,11 +46,14 @@ Install once. After that the app updates itself.
   most once a day. **Download** fetches the new installer and verifies it against the
   release's signed checksums, refusing a release that isn't signed with the Focus Lock
   release key. **Install and restart** installs it without a UAC prompt, through the
-  `FocusLock Updater` task. Focus Lock closes and reopens on the new version with your
-  settings, history and schedules intact. Without that task (reduced mode, or an install
+  `FocusLock Updater` task. Setup closes Focus Lock and reopens it on the new version with your
+  settings, history and schedules intact. If Setup doesn't go ahead, the app stays open and
+  says so. Without that task (reduced mode, or an install
   older than 2026-11-20) it asks for administrator approval once per update instead.
 - **Not during a session.** You can check and download at any time, but installing is refused
-  while a timer lock or a schedule window is active.
+  while a timer lock or a schedule window is active, or when Focus Lock can't tell
+  whether one is (Setup run by hand still goes on in that case, so a broken install can be
+  repaired).
 - **By hand.** Running a newer `FocusLock-Setup-<version>.exe` over the existing install does
   the same thing. Running an older one rolls back.
 
@@ -52,7 +61,7 @@ Install once. After that the app updates itself.
 
 Uninstall from **Settings → Apps**. It stops the enforcer and the app and removes the
 scheduled tasks, any active `hosts` block and Chrome policy entries, the `HKLM` and `HKCU`
-state, both Defender exclusions, `%APPDATA%\FocusLock` and `%ProgramData%\FocusLock`. The
+state, the Defender exclusion, `%APPDATA%\FocusLock` and `%ProgramData%\FocusLock`. The
 log is `%TEMP%\FocusLock-uninstall.log`.
 
 ## Build from source
@@ -77,8 +86,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_installer.ps1
 ```
 
 This writes `installer\Output\FocusLock-Setup-<version>.exe`, `FocusLock-Setup.exe` and
-`SHA256SUMS.txt`. A local build is installer version `0.0.0.0` and the app reports `dev`,
-which never offers updates. Pass `-Version YYYY.M.D.N` to stamp a release version.
+`SHA256SUMS.txt` (the release workflow adds the signature). A local build is installer
+version `0.0.0.0` and the app reports `dev`, which never offers updates. Pass `-Version
+YYYY.M.D.N` to stamp a release version.
 
 A manual test checklist for the installer and updates is in
 [`installer/TESTING.md`](../installer/TESTING.md).

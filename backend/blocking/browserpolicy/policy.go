@@ -17,7 +17,6 @@ package browserpolicy
 
 import (
 	"sort"
-	"strings"
 
 	"focus-lock/backend/blocking/hosts"
 )
@@ -30,8 +29,7 @@ func Patterns(sites []string) []string {
 	seen := make(map[string]bool)
 	out := []string{}
 	for _, s := range sites {
-		host := strings.ToLower(hosts.CleanDomain(s))
-		host = strings.TrimPrefix(host, "www.")
+		host := hosts.BaseDomain(s)
 		if host == "" || seen[host] {
 			continue
 		}

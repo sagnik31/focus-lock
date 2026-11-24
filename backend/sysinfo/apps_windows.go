@@ -73,14 +73,16 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 			}
 
 			name, _, err := sk.GetStringValue("DisplayName")
-			sk.Close() // Close early to avoid leaks in loop
+			sysComp, _, errSys := sk.GetIntegerValue("SystemComponent")
+			installLoc, _, _ := sk.GetStringValue("InstallLocation")
+			displayIcon, _, _ := sk.GetStringValue("DisplayIcon")
+			sk.Close()
 
 			if err != nil || name == "" {
 				continue
 			}
 
 			// Filter out System Components (Registry flag)
-			sysComp, _, errSys := sk.GetIntegerValue("SystemComponent")
 			if errSys == nil && sysComp == 1 {
 				continue
 			}
@@ -91,13 +93,6 @@ func scanUninstallKeys(apps map[string]AppInfo) {
 			}
 
 			// Try to find path from InstallLocation or DisplayIcon
-			// Re-open to read other values if needed, or read all at once above.
-			// simplified for brevity:
-			sk, _ = registry.OpenKey(keyLoc.Key, skPath, registry.READ)
-			installLoc, _, _ := sk.GetStringValue("InstallLocation")
-			displayIcon, _, _ := sk.GetStringValue("DisplayIcon")
-			sk.Close()
-
 			exePath := determineExePath(displayIcon, installLoc)
 
 			// Even if exePath is empty, we add the app because the user might want to know it exists.

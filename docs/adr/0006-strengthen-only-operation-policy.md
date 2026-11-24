@@ -22,12 +22,12 @@ request directly.
 - While a lock or schedule window is active, it **allows strengthening**: start or extend a
   lock, add apps or sites, turn on VPN blocking, add schedules, append-only import, and an
   emergency unlock within the quota (two one-minute pauses per session, where each schedule
-  window is one session).
+  window is one session, and overlapping windows and locks share a quota).
 - It **refuses weakening**: end or shorten a lock, remove apps or sites, turn off VPN
   blocking, delete, disable or re-time an enabled schedule, or refill the unlock quota with
   a new lock during a schedule window.
-- It also **validates input** (`ValidAppName`, `NormalizeSchedule`). The frontend is not a
-  trust boundary.
+- It also **validates input**: app names, sites, schedules and the session length. The
+  frontend is not a trust boundary.
 
 ## Alternatives considered
 
@@ -44,7 +44,7 @@ request directly.
 - New mutations need a new `OpType` and a policy rule. They must not write the config
   directly.
 - Strictness is a product choice. For example, any enabled schedule can't be re-timed
-  during a lock, not only the active one, and an invalid schedule rejects the whole import.
+  during a lock, not only the active one, and an invalid schedule or group rejects the whole import.
 - The UI doesn't decide what is locked. Since 2026-11-20 it gets the lock in force and its
   end time from the bound `GetLockState()` (`storage.LockStateAt`). Before that it had its
   own TypeScript copy of the schedule-window logic, which could drift from the Go version.

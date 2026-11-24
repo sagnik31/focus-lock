@@ -1,6 +1,7 @@
 package watchdog
 
 import (
+	"path/filepath"
 	"strings"
 
 	"focus-lock/backend/storage"
@@ -9,6 +10,22 @@ import (
 // minDeepMatchLen is the shortest blocked name (without ".exe") that the
 // metadata substring match applies to.
 const minDeepMatchLen = 3
+
+// metadataMatchable reports whether the loose metadata match may be applied to
+// the executable at path. Protected processes and everything in the Windows
+// folder are excluded: their product name is "Microsoft Windows Operating
+// System", so one broad entry ("windows") would end the whole desktop.
+// Programs there can still be blocked by their exact name.
+func metadataMatchable(path, windowsDir string) bool {
+	if storage.ProtectedApp(filepath.Base(path)) {
+		return false
+	}
+	if windowsDir == "" {
+		return true
+	}
+	prefix := strings.ToLower(filepath.Clean(windowsDir)) + string(filepath.Separator)
+	return !strings.HasPrefix(strings.ToLower(filepath.Clean(path)), prefix)
+}
 
 // deepMatch reports whether a process whose version metadata has the given
 // product name and file description should be blocked, given the configured

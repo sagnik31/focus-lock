@@ -27,7 +27,8 @@ not a compromised account or workflow.
   signed checksums, and keeps the installer in the admin-only
   `%ProgramData%\FocusLock\update`. It may reuse the app's own download only after copying
   it there and matching it against the signed checksum. It checks for a focus session
-  before and after the download, then starts Setup silently with `/UPDATE=2` and exits.
+  before and after the download (and refuses if it can't tell), then starts Setup silently
+  with `/UPDATE=2` and exits. Setup, not the app, closes the app.
   The exit code is the task's last result, which the app reads back.
 - **Fallback.** When the task is missing or can't be run (reduced mode, a failed setup, or an
   install from before this change), the app keeps 0008's single UAC prompt.

@@ -58,12 +58,18 @@ cd frontend && npm test          # Vitest
   side effects only after it succeeds.
 - **During a session the policy may only allow strengthening.** Anything that ends,
   shortens or narrows a block must be refused while a lock or schedule window is active.
-- **Validate in the policy, not the UI.** App names go through `storage.ValidAppName`,
-  schedules through `storage.NormalizeSchedule`. In strong mode anyone can write a request
+- **Validate in the policy, not the UI.** App names go through `storage.ValidAppName`
+  and `storage.ProtectedApp`, sites through `hosts.ValidSite`, schedules through
+  `storage.NormalizeSchedule`. In strong mode anyone can write a request
   file.
 - **Strong mode: the UI never calls `Store.Save`.** It can't sign (`CanSign() == false`).
   Route changes through `applyOp` in `bridge/app.go`, which uses the request channel.
   Anything that records to the config (stats, warnings) must handle `CanSign() == false`.
+- **Read-modify-write only through `Store.UpdateAtomic`, `ApplyRequest` or a method that takes
+  `lockConfig`.** Two processes sign in reduced mode, so load, change and `Save` can lose a lock.
+- **Decode configs with `decodeConfig`**, never over existing data.
+- **To ask whether to block now, use `storage.Enforcing`** (it knows about pauses). To ask whether
+  a change would weaken a session, use `storage.EnforcementActive`.
 - **Read config from the bridge with `Store.Snapshot()`** or the locked getters, not
   `Store.Data`. The enforcer goroutine reloads it concurrently.
 - **Use `clock.Default.Now()`**, not `time.Now()`, in enforcement and policy code.
@@ -85,12 +91,17 @@ cd frontend && npm test          # Vitest
 - **`--apply-update` runs elevated, so it must not trust anything the user can write.**
   It takes no arguments, fetches and verifies the release itself, and runs Setup only from
   the admin-only `%ProgramData%\FocusLock\update`.
+- **The same goes for setup:** never pass the elevated side a file from `%TEMP%` or `%APPDATA%`
+  without holding it open and checking it. Setup must provision strong mode before it registers
+  the enforcer task, which can fire at once.
+- **The hosts cleanup exists twice** and must match: `stripBlock` in `blocking/hosts/manager.go`
+  and `Remove-FocusLockLines` in `scripts/install_setup.ps1`.
 - **Releases must be signed.** The workflow signs `SHA256SUMS.txt` with the
   `RELEASE_SIGNING_KEY` secret, and the app refuses unsigned releases. If you rotate the key,
   change `releasePublicKeyB64` in `backend/updater/signature.go` in the same release
   (`go run ./cmd/signsums -genkey -out <file outside the repo>`).
-- **Keep the `*_other.go` `!windows` stubs** so `go build ./...` works on other platforms.
-  `watchdog` builds only on Windows.
+- **Keep the `*_other.go` `!windows` stubs** so the packages without Windows imports build on
+  other platforms. `main`, `bridge`, `storage`, `sysinfo` and `watchdog` build only on Windows.
 - **Spawned console tools** (`schtasks`, PowerShell, `ipconfig`) must set `CREATE_NO_WINDOW`
   (and `HideWindow`) in `SysProcAttr` so no console flashes. See `bridge/spawn_windows.go`,
   or use the `scheduler.command` helper (`scheduler/console_windows.go`) for `schtasks`.
@@ -101,8 +112,8 @@ cd frontend && npm test          # Vitest
   `watchdog/match.go`) and unit-test it there. No GUI or Windows state is needed.
 - **Never call `storage.NewStore()` in tests.** It touches the real registry. Build a
   `Store` literal with `filePath` in `t.TempDir()`, `activeSecret`, `canSign: true` and a
-  nil `regStore` (see `testSigningStore` in `backend/storage/concurrency_test.go`). Tests in other packages use
-  `storage.NewLocalStore(path, secret)`, which builds the same thing.
+  nil `regStore` (see `testSigningStore` in `backend/storage/concurrency_test.go`). Tests in
+  other packages use `storage.NewLocalStore(path, secret)`, which builds the same thing.
 
 ### Frontend and bindings
 
