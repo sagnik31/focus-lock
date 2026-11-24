@@ -137,6 +137,57 @@ func TestEmergencyUnlockRefillsPerScheduleWindow(t *testing.T) {
 	}
 }
 
+func TestAddingActiveScheduleDoesNotRefillUnlocks(t *testing.T) {
+	extra := Schedule{ID: "x", Enabled: true, Days: []string{"Mon"}, StartTime: "08:00", EndTime: "18:00"}
+	base := Schedule{ID: "s1", Enabled: true, Days: []string{"Mon"}, StartTime: "09:00", EndTime: "17:00"}
+	unlock := Operation{Type: OpEmergencyUnlock}
+
+	for name, op := range map[string]Operation{
+		"save":   {Type: OpSaveSchedules, Schedules: []Schedule{base, extra}},
+		"import": {Type: OpImport, Schedules: []Schedule{extra}},
+	} {
+		for _, manual := range []bool{false, true} {
+			now := at(0, 12, 0)
+			cfg := &Config{Schedules: []Schedule{base}}
+			if manual {
+				cfg = &Config{LockEndTime: now.Add(time.Hour)}
+			}
+			for i := 0; i < 2; i++ {
+				if err := ApplyOperation(cfg, unlock, now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := ApplyOperation(cfg, op, now); err != nil {
+				t.Fatal(err)
+			}
+			if err := ApplyOperation(cfg, unlock, now); err == nil {
+				t.Errorf("%s (manual=%v): adding an active schedule refilled the unlock quota", name, manual)
+			}
+		}
+	}
+}
+
+func TestOverlappingWindowsShareUnlocks(t *testing.T) {
+	cfg := &Config{Schedules: []Schedule{
+		{ID: "a", Enabled: true, Days: []string{"Mon"}, StartTime: "09:00", EndTime: "12:00"},
+		{ID: "b", Enabled: true, Days: []string{"Mon"}, StartTime: "11:00", EndTime: "14:00"},
+		{ID: "c", Enabled: true, Days: []string{"Mon"}, StartTime: "14:00", EndTime: "15:00"},
+	}}
+	applyScheduleUnlockReset(cfg, at(0, 10, 0))
+	cfg.EmergencyUnlocksUsed = 2
+	for _, hour := range []int{11, 12, 13} { // b joins a, a ends, b continues
+		applyScheduleUnlockReset(cfg, at(0, hour, 30))
+		if cfg.EmergencyUnlocksUsed != 2 {
+			t.Fatalf("quota refilled at %d:30 while windows overlap", hour)
+		}
+	}
+	// c follows b without overlapping it: a new session.
+	applyScheduleUnlockReset(cfg, at(0, 14, 0))
+	if cfg.EmergencyUnlocksUsed != 0 {
+		t.Error("a window that doesn't overlap the previous one should refill the quota")
+	}
+}
+
 func TestIdleAllowsRemoval(t *testing.T) {
 	now := time.Now()
 	cfg := idleConfig()

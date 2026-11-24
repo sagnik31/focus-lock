@@ -34,7 +34,7 @@ type Config struct {
 	EmergencyUnlocksUsed int           `json:"emergency_unlocks_used"`
 	LastEnforcementError string        `json:"last_enforcement_error"` // Non-empty when enforcement setup failed; surfaced as a UI warning
 	SessionStart         time.Time     `json:"session_start"`          // Start of the current manual session (zero if none); used to record history on end
-	ScheduleUnlockWindow string        `json:"schedule_unlock_window"` // Key of the schedule window the emergency-unlock quota is tied to; a change refills the quota (see applyScheduleUnlockReset)
+	ScheduleUnlockWindow string        `json:"schedule_unlock_window"` // Key of the schedule window the emergency-unlock quota is tied to; a set sharing no window with it refills the quota (see applyScheduleUnlockReset)
 	ScheduleSessionStart time.Time     `json:"schedule_session_start"` // Start of the in-progress schedule-driven session (zero if none); recorded to history on its falling edge (see UpdateScheduleSession)
 	RecentSites          []string      `json:"recent_sites"`           // Sites the user has blocked, most recent first (capped); powers the "Recently used" list
 	SiteGroups           []SiteGroup   `json:"site_groups"`            // User-defined website sections, shown above the built-in suggestions

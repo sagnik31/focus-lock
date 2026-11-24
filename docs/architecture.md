@@ -101,7 +101,8 @@ A schedule is a set of days plus a start and end time. An end earlier than the s
 an overnight window. `storage.SchedulesActiveAt` is the single check for whether a window
 is active. The UI asks `GetLockState()` (built on `storage.LockStateAt`) for the lock in
 force and when it ends, so the lock screen never computes windows itself. Each window
-instance counts as one session for the emergency-unlock quota.
+instance counts as one session for the emergency-unlock quota, except that overlapping
+windows and manual locks share one quota.
 
 ## Updates
 

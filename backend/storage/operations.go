@@ -285,21 +285,40 @@ func applyStartFocus(cfg *Config, op Operation, now time.Time) error {
 }
 
 // applyScheduleUnlockReset refills the emergency-unlock quota when a new
-// schedule window becomes active. For a recurring schedule, "a session" is one
-// window instance (identified by ActiveScheduleWindow's key); when the active
-// window set differs from the one the quota is currently tied to, the quota is
-// reset and re-tied. It is a no-op when no schedule window is active (manual
-// locks refill separately in applyStartFocus) or when the window is unchanged,
-// so it is safe to call on every operation and every enforcement tick. Returns
-// true if it changed cfg.
+// schedule session starts. For a recurring schedule, "a session" is one window
+// instance (a part of ActiveScheduleWindow's key). Windows that overlap share
+// one quota: if any window the quota is tied to is still active, the quota is
+// only re-tied to the current set. Otherwise adding a schedule that is active
+// now (allowed mid-session) would buy two more pauses each time. A manual lock
+// in force shares its quota with the window for the same reason.
+//
+// It is a no-op when no schedule window is active (manual locks refill
+// separately in applyStartFocus) or when the window set is unchanged, so it is
+// safe to call on every operation and every enforcement tick. Returns true if
+// it changed cfg.
 func applyScheduleUnlockReset(cfg *Config, now time.Time) bool {
 	key, active := ActiveScheduleWindow(cfg.Schedules, now)
 	if !active || cfg.ScheduleUnlockWindow == key {
 		return false
 	}
+	if !ManualLockActive(cfg, now) && !sharesWindow(cfg.ScheduleUnlockWindow, key) {
+		cfg.EmergencyUnlocksUsed = 0
+	}
 	cfg.ScheduleUnlockWindow = key
-	cfg.EmergencyUnlocksUsed = 0
 	return true
+}
+
+// sharesWindow reports whether two ActiveScheduleWindow keys have a window
+// instance in common.
+func sharesWindow(a, b string) bool {
+	for _, x := range strings.Split(a, ",") {
+		for _, y := range strings.Split(b, ",") {
+			if x != "" && x == y {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func applySaveSchedules(cfg *Config, op Operation, locked bool) error {

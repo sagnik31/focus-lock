@@ -19,9 +19,8 @@ func SchedulesActiveAt(schedules []Schedule, now time.Time) bool {
 
 // ActiveScheduleWindow reports whether any enabled schedule covers now and, if
 // so, returns a stable key identifying the set of active window instances. The
-// key changes whenever a window instance starts or ends, so callers can detect
-// "a new schedule window just became active" (used to refill the per-session
-// emergency-unlock quota — see applyScheduleUnlockReset).
+// key changes whenever a window instance starts or ends. The per-session
+// emergency-unlock quota is tied to it (see applyScheduleUnlockReset).
 //
 // A schedule's Days list the day the window STARTS. A window whose EndTime is
 // not after its StartTime (e.g. 22:00–06:00) crosses midnight: it runs from

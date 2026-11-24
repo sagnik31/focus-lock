@@ -106,7 +106,7 @@ func (s *Store) RecordManualSessionEnd(now time.Time) {
 }
 
 // RefreshScheduleQuota refills the emergency-unlock quota at the start of each
-// new schedule window so the count the UI shows stays current even before the
+// new schedule session so the count the UI shows stays current even before the
 // user tries to unlock. It writes only when the active window actually changed,
 // so it is cheap to call on every enforcement tick. Only a signer persists
 // (strong-mode UI is a no-op; the elevated Ghost is authoritative).
