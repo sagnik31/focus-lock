@@ -224,3 +224,12 @@ Any installed build from `main` after `ed2be63` will do.
       emergency unlock shows its error under the button.
 - [ ] **Strong-mode warnings stay visible (G11).** Hard to force by hand; if the enforcer fails
       to start from the UI in strong mode, the amber banner should show it instead of nothing.
+
+## 8. Single instance and shared unlock quota
+
+- [ ] **One enforcer.** With the enforcer running, start `focus-lock.exe --enforce` from an elevated
+      prompt: the second one exits at once. End the real enforcer with the UI open: the task
+      brings one back within a minute.
+- [ ] **One window.** Launch Focus Lock while it is open: no second window appears.
+- [ ] **Shared quota.** In a schedule window, use both emergency unlocks, then add a schedule that is
+      active now: the unlock button stays at the limit.
