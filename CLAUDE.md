@@ -96,7 +96,7 @@ cd frontend && npm test          # Vitest
   the enforcer task, which can fire at once.
 - **The enforcer touches `%APPDATA%` only through `userfs.Do`** (in `storage`, through
   `readUser`/`writeUser`/`removeUser`). It runs elevated in a folder the user controls, so a
-  plain `os.*` call there can be redirected by a planted link (G25). Files in `secureDir` and
+  plain `os.*` call there can be redirected by a planted link. Files in `secureDir` and
   `%ProgramData%` are accessed directly. Don't hand a user-folder path to anything elevated
   outside `userfs.Do`.
 - **The hosts cleanup exists twice** and must match: `stripBlock` in `blocking/hosts/manager.go`
@@ -153,7 +153,8 @@ rights, using [installer/TESTING.md](installer/TESTING.md):
 
 - Tracked: `build/windows/` and `build/appicon.png` (CI needs them).
 - Ignored: `build/bin/`, `*.exe`, `installer/Output/`, `frontend/dist`,
-  `frontend/package.json.md5`, `HANDOVER.md`.
+  `frontend/package.json.md5`, `node_modules`, `HANDOVER.md`, `.claude/gap-audits/`,
+  `.claude/skills/`, `.claude/settings.local.json`.
 - Releases are cut automatically every week from `main` by `.github/workflows/release.yml`.
   Don't bump versions by hand.
 - When you make a new major design decision, add an ADR in `docs/adr/` and list it in
