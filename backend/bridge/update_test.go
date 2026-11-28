@@ -163,7 +163,7 @@ func stubInstall(t *testing.T, taskErr error, status func() (updater.TaskStatus,
 	prevRun, prevStatus, prevLaunch, prevPoll := runUpdaterTask, updaterTaskStatus, launchSetup, taskPollInterval
 	runUpdaterTask = func() error { return taskErr }
 	updaterTaskStatus = status
-	launchSetup = func(p string) error { launched = append(launched, p); return nil }
+	launchSetup = func(p, _ string) (func(), error) { launched = append(launched, p); return func() {}, nil }
 	taskPollInterval = time.Millisecond
 	t.Cleanup(func() {
 		runUpdaterTask, updaterTaskStatus, launchSetup, taskPollInterval = prevRun, prevStatus, prevLaunch, prevPoll
@@ -261,5 +261,44 @@ func TestInstallUpdateFallsBackToUAC(t *testing.T) {
 	st := decodeState(t, a.InstallUpdate())
 	if st.Phase != phaseInstalling || len(*launched) != 1 || (*launched)[0] != m.setupPath {
 		t.Fatalf("state %+v, launched %v", st, *launched)
+	}
+}
+
+// G24: the fallback hands the expected checksum to the locked launch, drops a
+// download that fails that check, and unlocks the file if Setup never goes
+// ahead.
+func TestInstallUpdateFallbackLocksAndRechecks(t *testing.T) {
+	prev := setupCloseTimeout
+	setupCloseTimeout = 5 * time.Millisecond
+	t.Cleanup(func() { setupCloseTimeout = prev })
+	a, m := readyApp(t)
+	stubInstall(t, errors.New("task not found"), nil)
+	var gotSHA string
+	released := make(chan struct{}, 1)
+	launchSetup = func(_, sha string) (func(), error) {
+		gotSHA = sha
+		return func() { released <- struct{}{} }, nil
+	}
+	want := m.setupSHA
+	a.InstallUpdate()
+	waitPhase(t, a, m, phaseReady)
+	if gotSHA != want {
+		t.Fatalf("launch got checksum %q, want %q", gotSHA, want)
+	}
+	select {
+	case <-released:
+	case <-time.After(time.Second):
+		t.Fatal("the installer lock was never released")
+	}
+
+	a, m = readyApp(t)
+	path := m.setupPath
+	launchSetup = func(string, string) (func(), error) { return nil, updater.ErrChecksumMismatch }
+	st := decodeState(t, a.InstallUpdate())
+	if st.Phase != phaseError || st.Downloaded || !strings.Contains(st.Error, "changed or damaged") {
+		t.Fatalf("state: %+v", st)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("the failed download was kept")
 	}
 }

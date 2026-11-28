@@ -94,6 +94,11 @@ cd frontend && npm test          # Vitest
 - **The same goes for setup:** never pass the elevated side a file from `%TEMP%` or `%APPDATA%`
   without holding it open and checking it. Setup must provision strong mode before it registers
   the enforcer task, which can fire at once.
+- **The enforcer touches `%APPDATA%` only through `userfs.Do`** (in `storage`, through
+  `readUser`/`writeUser`/`removeUser`). It runs elevated in a folder the user controls, so a
+  plain `os.*` call there can be redirected by a planted link (G25). Files in `secureDir` and
+  `%ProgramData%` are accessed directly. Don't hand a user-folder path to anything elevated
+  outside `userfs.Do`.
 - **The hosts cleanup exists twice** and must match: `stripBlock` in `blocking/hosts/manager.go`
   and `Remove-FocusLockLines` in `scripts/install_setup.ps1`.
 - **Releases must be signed.** The workflow signs `SHA256SUMS.txt` with the

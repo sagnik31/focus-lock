@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"focus-lock/backend/userfs"
 )
 
 // hostsBlockErrPrefix tags the LastEnforcementError messages that report a
@@ -162,7 +164,9 @@ func NewStore() (*Store, error) {
 	}
 
 	dir := filepath.Join(configDir, "FocusLock")
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	// ErrDisabled: the enforcer can't touch the user's folder at all, but it
+	// can still enforce from the admin-only copy, so carry on.
+	if err := userfs.Do(func() error { return os.MkdirAll(dir, 0755) }); err != nil && !errors.Is(err, userfs.ErrDisabled) {
 		return nil, err
 	}
 
@@ -213,8 +217,15 @@ func (s *Store) lockConfig() (unlock func()) {
 		path = s.filePath + ".lock"
 	}
 	release := func() {}
-	if path != "" {
+	switch {
+	case path == "":
+	case s.secureDir != "":
 		release = lockFile(path, 2*time.Second)
+	default: // next to config.json, in the user's folder
+		_ = userfs.Do(func() error {
+			release = lockFile(path, 2*time.Second)
+			return nil
+		})
 	}
 	return func() {
 		release()
@@ -236,7 +247,7 @@ func (s *Store) loadInternal() error {
 	maxRetries := 3
 
 	for i := 0; i < maxRetries; i++ {
-		data, err = os.ReadFile(s.filePath)
+		data, err = readUser(s.filePath)
 		if err == nil {
 			break
 		}
@@ -270,7 +281,7 @@ func (s *Store) loadInternal() error {
 	if err == nil {
 		// 2. Verify Signature
 		sigPath := s.filePath + ".sig"
-		sigData, sigErr := os.ReadFile(sigPath)
+		sigData, sigErr := readUser(sigPath)
 		if sigErr == nil {
 			computed := s.computeHMAC(data)
 			stored := string(sigData)
@@ -455,13 +466,13 @@ func (s *Store) saveInternal() error {
 	//    next load falls back to the timing-only registry backup, and the block
 	//    lists are lost while the lock still shows active.
 	//    With a secure copy in place a failure here heals on the next load.
-	if err := atomicWrite(s.filePath, data); err != nil && !secured {
+	if err := writeUser(s.filePath, data); err != nil && !secured {
 		return err
 	}
-	if err := atomicWrite(s.filePath+".sig", []byte(sig)); err != nil && !secured {
+	if err := writeUser(s.filePath+".sig", []byte(sig)); err != nil && !secured {
 		return err
 	}
-	if info, err := os.Stat(s.filePath); err == nil {
+	if info, err := statUser(s.filePath); err == nil {
 		s.ownWrite = info.ModTime()
 	}
 
@@ -476,8 +487,8 @@ func (s *Store) saveInternal() error {
 	//    primary so it always holds a complete, verifiable config. Recovery
 	//    restores the WHOLE config from here — block lists included, not just the
 	//    lock timing — so we never resume with an active lock that blocks nothing.
-	_ = atomicWrite(s.filePath+".bak", data)
-	_ = atomicWrite(s.filePath+".bak.sig", []byte(sig))
+	_ = writeUser(s.filePath+".bak", data)
+	_ = writeUser(s.filePath+".bak.sig", []byte(sig))
 
 	// 3. Registry backup of lock timing (survives even if the files are deleted,
 	//    so the lock itself can't be escaped by removing config.json).
@@ -500,7 +511,7 @@ func (s *Store) adoptLegacy(primary []byte, havePrimary bool) bool {
 		return false
 	}
 	try := func(data []byte, sigPath string) bool {
-		sig, err := os.ReadFile(sigPath)
+		sig, err := readUser(sigPath)
 		if err != nil || !hmac.Equal([]byte(hmacHex(s.legacySecret, data)), sig) {
 			return false
 		}
@@ -514,17 +525,17 @@ func (s *Store) adoptLegacy(primary []byte, havePrimary bool) bool {
 	if havePrimary && try(primary, s.filePath+".sig") {
 		return true
 	}
-	bak, err := os.ReadFile(s.filePath + ".bak")
+	bak, err := readUser(s.filePath + ".bak")
 	return err == nil && try(bak, s.filePath+".bak.sig")
 }
 
 // keepRejected keeps a copy of a config that failed verification.
 func (s *Store) keepRejected(data []byte) {
 	path := s.filePath + ".rejected"
-	if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, data) {
+	if old, err := readUser(path); err == nil && bytes.Equal(old, data) {
 		return
 	}
-	_ = atomicWrite(path, data)
+	_ = writeUser(path, data)
 }
 
 // atomicWrite writes data to a temp file in the same directory, flushes it to
@@ -588,7 +599,7 @@ func (s *Store) loadSecure(primary []byte, havePrimary bool) bool {
 	}
 	s.Data = cfg
 
-	psig, sigErr := os.ReadFile(s.filePath + ".sig")
+	psig, sigErr := readUser(s.filePath + ".sig")
 	if !havePrimary || !bytes.Equal(primary, sdata) || sigErr != nil || string(psig) != string(ssig) {
 		_ = s.saveInternal()
 	}
@@ -600,11 +611,11 @@ func (s *Store) loadSecure(primary []byte, havePrimary bool) bool {
 // signature was found and parsed, so a stale pre-signature backup or a tampered
 // one is ignored.
 func (s *Store) restoreFromBackup() bool {
-	bdata, err := os.ReadFile(s.filePath + ".bak")
+	bdata, err := readUser(s.filePath + ".bak")
 	if err != nil {
 		return false
 	}
-	bsig, err := os.ReadFile(s.filePath + ".bak.sig")
+	bsig, err := readUser(s.filePath + ".bak.sig")
 	if err != nil {
 		return false
 	}

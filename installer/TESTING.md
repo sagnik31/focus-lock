@@ -264,3 +264,16 @@ Any installed build from `main` after `ed2be63` will do.
 - [ ] **Double click (G57).** Double-click Emergency Unlock: only one is used.
 - [ ] **Sites (G50).** Adding `youtube` is refused; adding `https://www.example.org/x` blocks
       `example.org`.
+
+## 10. Elevated access to user files (2026-11-28)
+
+- [ ] **Enforcer still works with user rights (G25).** After installing, start a lock, add a
+      site and an app mid-session, then let it end: every change sticks, the lock screen and
+      Insights update, and `%APPDATA%\FocusLock\debug.log` and `ghost_debug.log` keep growing.
+      `%ProgramData%\FocusLock\enforcer.log` should not exist (it is written only when the
+      restricted token can't be built).
+- [ ] **Locked installer (G24 fallback).** In an admin PowerShell, `Disable-ScheduledTask
+      'FocusLock Updater'`. Download an update, click **Install and restart**, and leave the UAC
+      prompt open. In Explorer, try to delete or rename the downloaded setup in
+      `%APPDATA%\FocusLock\update\`: Windows says it is in use. Approve the prompt: the update
+      installs. Re-enable the task afterwards.

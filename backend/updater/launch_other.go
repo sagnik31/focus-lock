@@ -14,3 +14,8 @@ var ErrUACDeclined = errors.New("the administrator prompt was declined, so the u
 func Launch(setupPath string) error {
 	return errors.New("installing updates is only supported on Windows")
 }
+
+// LaunchVerified is not supported off Windows.
+func LaunchVerified(setupPath, wantSHA256 string) (release func(), err error) {
+	return nil, errors.New("installing updates is only supported on Windows")
+}

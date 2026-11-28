@@ -178,6 +178,11 @@ func FileSHA256(path string) (string, error) {
 // ErrChecksumMismatch means a file does not match its published checksum.
 var ErrChecksumMismatch = errors.New("the downloaded installer does not match its published checksum")
 
+// ErrInstallerUnreadable means the downloaded installer could not be opened
+// locked, read or resolved, for example because another program has it open
+// for writing.
+var ErrInstallerUnreadable = errors.New("the downloaded installer could not be read")
+
 // VerifyFile checks path against the expected lowercase hex SHA-256.
 func VerifyFile(path, wantSHA256 string) error {
 	got, err := FileSHA256(path)

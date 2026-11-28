@@ -6,6 +6,7 @@ import (
 	"focus-lock/backend/bridge"
 	"focus-lock/backend/logging"
 	"focus-lock/backend/storage"
+	"focus-lock/backend/userfs"
 	"focus-lock/backend/watchdog"
 	"os"
 	"path/filepath"
@@ -43,6 +44,12 @@ func main() {
 	// should not be blocked by the single-instance mutex of the UI.
 	if len(os.Args) > 1 && os.Args[1] == "--enforce" {
 		// Headless Mode
+		// The enforcer runs elevated but its config, request/result files and
+		// logs are in the user's %APPDATA%. From here on every access to them
+		// is made with the user's own rights (backend/userfs, G25). If the
+		// restricted token can't be built, those accesses are refused rather
+		// than made elevated; enforcement still runs from the admin-only copy.
+		userfsErr := userfs.Enable()
 		store, err := storage.NewStore()
 		if err != nil {
 			return
@@ -58,8 +65,16 @@ func main() {
 
 		// DEBUG LOG: Confirm startup (size-capped; see backend/logging)
 		configDir, _ := os.UserConfigDir()
-		logging.Write(filepath.Join(configDir, "FocusLock", "ghost_debug.log"),
-			fmt.Sprintf("Ghost started with PID %d", os.Getpid()))
+		_ = userfs.Do(func() error {
+			logging.Write(filepath.Join(configDir, "FocusLock", "ghost_debug.log"),
+				fmt.Sprintf("Ghost started with PID %d", os.Getpid()))
+			return nil
+		})
+		if userfsErr != nil && store.SecureDir() != "" {
+			// The user's folder is off limits, so log to the admin-only one.
+			logging.Write(filepath.Join(store.SecureDir(), "enforcer.log"),
+				fmt.Sprintf("user file access disabled: %v", userfsErr))
+		}
 
 		// NOTE: The Ghost is deliberately NOT a critical process. Marking it critical
 		// (RtlSetProcessIsCritical) bugchecked Windows (0xEF) whenever anything else

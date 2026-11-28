@@ -337,16 +337,7 @@ func (a *App) InstallUpdate() string {
 
 	// The update folder is user-writable: re-verify right before launch.
 	if err := updater.VerifyFile(m.setupPath, m.setupSHA); err != nil {
-		_ = os.Remove(m.setupPath)
-		m.setupPath, m.setupSHA = "", ""
-		m.state.Downloaded = false
-		m.state.Phase = phaseError
-		if errors.Is(err, updater.ErrChecksumMismatch) {
-			m.state.Error = "The downloaded installer was changed or damaged, so it was deleted and not run. Download the update again."
-		} else {
-			m.state.Error = "The downloaded installer could not be read; download the update again."
-		}
-		return a.publishUpdate(m)
+		return a.dropDownload(m, err)
 	}
 
 	m.state.Phase = phaseInstalling
@@ -365,23 +356,45 @@ func (a *App) InstallUpdate() string {
 	}
 
 	// Fallback (no task: reduced mode, or installed before ADR 0009): run
-	// the verified setup with one UAC prompt.
-	if err := launchSetup(m.setupPath); err != nil {
+	// the setup with one UAC prompt. The check above was by path, so
+	// launchSetup locks the file, checks it again through that lock and
+	// launches exactly that file (G24). The lock is held until Setup closes
+	// the app, or released by waitForSetup if Setup never goes ahead.
+	release, err := launchSetup(m.setupPath, m.setupSHA)
+	if errors.Is(err, updater.ErrChecksumMismatch) || errors.Is(err, updater.ErrInstallerUnreadable) {
+		return a.dropDownload(m, err)
+	}
+	if err != nil {
 		m.state.Phase = phaseReady
 		m.state.Error = err.Error()
 		return a.publishUpdate(m)
 	}
 
 	m.busy = true
-	go a.waitForSetup(m)
+	go a.waitForSetup(m, release)
 	return a.updateJSON(m)
+}
+
+// dropDownload deletes a downloaded installer that failed its check or could
+// not be read, and asks for a new download.
+func (a *App) dropDownload(m *updateManager, err error) string {
+	_ = os.Remove(m.setupPath)
+	m.setupPath, m.setupSHA = "", ""
+	m.state.Downloaded = false
+	m.state.Phase = phaseError
+	if errors.Is(err, updater.ErrChecksumMismatch) {
+		m.state.Error = "The downloaded installer was changed or damaged, so it was deleted and not run. Download the update again."
+	} else {
+		m.state.Error = "The downloaded installer could not be read; download the update again."
+	}
+	return a.publishUpdate(m)
 }
 
 // Seams for tests.
 var (
 	runUpdaterTask    = updater.RunUpdaterTask
 	updaterTaskStatus = updater.UpdaterTaskStatus
-	launchSetup       = updater.Launch
+	launchSetup       = updater.LaunchVerified
 	taskPollInterval  = time.Second
 	taskStartTimeout  = 30 * time.Second // the task never showed up as run
 	setupCloseTimeout = 2 * time.Minute  // Setup never closed the app
@@ -390,9 +403,13 @@ var (
 
 // waitForSetup keeps the app open until Setup closes it, which it does (in
 // PrepareToInstall) only once it has decided to go ahead. If that never
-// happens, Setup refused or failed, and the user gets to see it.
-func (a *App) waitForSetup(m *updateManager) {
+// happens, Setup refused or failed, and the user gets to see it. release
+// (nil when the updater task started Setup) unlocks the installer file.
+func (a *App) waitForSetup(m *updateManager, release func()) {
 	time.Sleep(setupCloseTimeout)
+	if release != nil {
+		release()
+	}
 	a.failUpdaterTask(m, "The installer did not go ahead, so the update was not installed. Try again when no focus session is active.")
 }
 
@@ -423,7 +440,7 @@ func (a *App) waitForUpdaterTask(m *updateManager, started time.Time) {
 
 func (a *App) finishUpdaterTask(m *updateManager, code int) {
 	if code == updater.ApplyStarted {
-		a.waitForSetup(m)
+		a.waitForSetup(m, nil)
 		return
 	}
 	a.failUpdaterTask(m, updater.ApplyExitMessage(code))

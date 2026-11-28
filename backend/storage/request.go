@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"focus-lock/backend/userfs"
 )
 
 // Request/result files implement the one-way control channel from the
@@ -42,17 +44,14 @@ func newRequestID() string {
 	return strconv.Itoa(os.Getpid()) + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 }
 
-// writeJSONAtomic writes v as JSON via temp-file + rename.
+// writeJSONAtomic writes v as JSON via temp-file + rename, with the user's
+// rights (see userio.go): the elevated enforcer writes results here.
 func writeJSONAtomic(path string, v interface{}) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return writeUser(path, data)
 }
 
 // --- UI side ---
@@ -73,7 +72,7 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 	req := Request{ID: newRequestID(), Op: op, Expires: deadline.UnixMilli()}
 
 	// Clear any stale result for a previous request before submitting.
-	_ = os.Remove(resultPath(dir))
+	removeUser(resultPath(dir))
 
 	if err := writeJSONAtomic(requestPath(dir), req); err != nil {
 		return err
@@ -83,7 +82,7 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 		return err
 	}
 	// Taking the request back succeeds only if the Ghost hasn't claimed it.
-	if os.Remove(requestPath(dir)) == nil {
+	if userfs.Do(func() error { return os.Remove(requestPath(dir)) }) == nil {
 		return errorString("enforcement process did not respond; is Focus Lock running?")
 	}
 	// It has, so the verdict is on its way.
@@ -97,7 +96,7 @@ func (s *Store) SubmitRequest(op Operation, timeout time.Duration) error {
 func awaitResult(dir, id string, deadline time.Time) (verdict error, ok bool) {
 	for time.Now().Before(deadline) {
 		if res, found := readResult(dir); found && res.ID == id {
-			_ = os.Remove(resultPath(dir))
+			removeUser(resultPath(dir))
 			if !res.OK {
 				return errorString(res.Error), true
 			}
@@ -115,11 +114,16 @@ func awaitResult(dir, id string, deadline time.Time) (verdict error, ok bool) {
 func TakePendingRequest(dir string) (Request, bool) {
 	// Renaming claims the request: the UI can no longer take it back.
 	claimed := requestPath(dir) + ".taken"
-	if err := os.Rename(requestPath(dir), claimed); err != nil {
-		return Request{}, false
-	}
-	defer os.Remove(claimed)
-	data, err := os.ReadFile(claimed)
+	var data []byte
+	err := userfs.Do(func() error {
+		if err := os.Rename(requestPath(dir), claimed); err != nil {
+			return err
+		}
+		defer os.Remove(claimed)
+		var err error
+		data, err = os.ReadFile(claimed)
+		return err
+	})
 	if err != nil {
 		return Request{}, false
 	}
@@ -139,7 +143,7 @@ func WriteResult(dir string, res Result) {
 }
 
 func readResult(dir string) (Result, bool) {
-	data, err := os.ReadFile(resultPath(dir))
+	data, err := readUser(resultPath(dir))
 	if err != nil {
 		return Result{}, false
 	}

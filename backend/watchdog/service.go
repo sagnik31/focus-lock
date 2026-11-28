@@ -17,12 +17,17 @@ import (
 	"focus-lock/backend/clock"
 	"focus-lock/backend/logging"
 	"focus-lock/backend/protection"
+	"focus-lock/backend/userfs"
 )
 
 func debugLog(msg string) {
 	configDir, _ := os.UserConfigDir()
 	logPath := filepath.Join(configDir, "FocusLock", "debug.log")
-	logging.Write(logPath, msg)
+	// The log is in the user's folder: write it with the user's rights (G25).
+	_ = userfs.Do(func() error {
+		logging.Write(logPath, msg)
+		return nil
+	})
 }
 
 // IsScheduleActive checks if any enabled schedule matches the current time.
