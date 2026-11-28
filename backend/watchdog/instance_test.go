@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -33,8 +34,12 @@ func TestAcquireEnforcerFile(t *testing.T) {
 	}
 }
 
+// mutexRuns gives each run its own mutex name: AcquireInstance keeps its handle
+// until process exit, so with -count > 1 a reused name would still be held.
+var mutexRuns atomic.Int32
+
 func TestInstanceMutex(t *testing.T) {
-	name := fmt.Sprintf(`Local\FocusLockTest-%d`, os.Getpid())
+	name := fmt.Sprintf(`Local\FocusLockTest-%d-%d`, os.Getpid(), mutexRuns.Add(1))
 	if InstanceRunning(name) {
 		t.Fatal("nothing holds the mutex yet")
 	}

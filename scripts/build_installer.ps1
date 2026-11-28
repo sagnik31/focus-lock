@@ -41,7 +41,21 @@ Set-Location $repoRoot
 # --- 1. Build the app ---
 Write-Host "[installer] Building Focus Lock $installerVersion (wails build)..." -ForegroundColor Cyan
 if ($Version) {
-    & wails build -ldflags "-X focus-lock/backend/version.Version=$Version"
+    # Stamp the exe's file/product version too: wails reads info.productVersion
+    # from wails.json (build\windows\info.json). Restore the file afterwards so
+    # the checkout stays clean.
+    $wailsJson = Join-Path $repoRoot 'wails.json'
+    $original = [System.IO.File]::ReadAllBytes($wailsJson)
+    $text = [System.Text.Encoding]::UTF8.GetString($original)
+    $pattern = '("productVersion"\s*:\s*")[^"]*(")'
+    if ($text -notmatch $pattern) { throw "productVersion not found in $wailsJson" }
+    $stamped = [regex]::Replace($text, $pattern, "`${1}$Version`${2}")
+    try {
+        [System.IO.File]::WriteAllText($wailsJson, $stamped, (New-Object System.Text.UTF8Encoding $false))
+        & wails build -ldflags "-X focus-lock/backend/version.Version=$Version"
+    } finally {
+        [System.IO.File]::WriteAllBytes($wailsJson, $original)
+    }
 } else {
     & wails build
 }
